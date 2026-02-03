@@ -98,35 +98,30 @@ async def handle_callbacks(client, callback_query):
     
     if data == "show_cmds":
         cmd_text = """
-📖 <b>CC KILLER COMMANDS:</b>
-━━━━━━━━━━━━━━━━━━━━━━━
-🎯 <b>MASTER CHECK:</b>
-• <code>/chk</code> - Single CC Check
-• <code>/mchk</code> - Mass CC Check (Turbo)
-• <code>/gen</code> - Generate Cards from BIN
+<b>╭── ⚡ CHECKER COMMANDS ⚡ ──╮</b>
 
-🏛️ <b>DEDICATED GATES:</b>
-<i>(Add 'm' for Mass Check, e.g. /mstr)</i>
-• <code>/str</code> - Stripe | <code>/az</code> - Amazon
-• <code>/shpa</code> - Shopify Auth | <code>/vbv</code> - VBV
-• <code>/ppal</code> - PayPal | <code>/ppavs</code> - PayPal AVS
-• <code>/as</code> - Stripe Auth | <code>/hit</code> - Hitter
-• <code>/btn</code> - Braintree | <code>/nmi</code> - NMI
-• <code>/payf</code> - Payflow | <code>/saw</code> - AutoWoo Stripe
-• <code>/sk</code> - Stripe SK | <code>/skc</code> - SK CCN 
-• <code>/nsk</code> - Non-SK (API 1-4) | <code>/saw</code> - AutoWoo
-• <code>/bt</code> - Braintree Auth | <code>/btc</code> - Charge
-• <code>/fs</code> - FastSpring | <code>/ck</code> - CardKiller
-• <code>/ash</code> - Advanced Shopify
+<b>🟢 MASS & MASTER</b>
+ ├ <code>/mchk</code> » Multi-Gate Turbo
+ ├ <code>/chk</code>  » Single Check
+ └ <code>/gen</code>  » Card Generator
 
-🛡️ <b>PROXY MANAGEMENT:</b>
-• <code>/setproxy</code> - Set Proxy (http://user:pass@ip:port)
-• <code>/myproxy</code> - View Current Proxy
+<b>🟡 GATEWAYS (Add 'm' for Mass)</b>
+ ├ <code>/str</code>  ┃ <code>/az</code>  Amazon
+ ├ <code>/shpa</code> ┃ <code>/vbv</code> VBV
+ ├ <code>/ppal</code> ┃ <code>/as</code>  Stripe Auth
+ ├ <code>/btn</code>  ┃ <code>/nmi</code> NMI
+ ├ <code>/payf</code> ┃ <code>/saw</code> AutoWoo
+ ├ <code>/sk</code>   ┃ <code>/skc</code> SK CCN
+ ├ <code>/bt</code>   ┃ <code>/btc</code> Charge
+ ├ <code>/fs</code>   ┃ <code>/ash</code> Adv Shopify
+ └ <code>/hit</code>  ┃ <code>/ck</code>  Killer
 
-📂 <b>MANAGEMENT:</b>
-• <code>/addsite</code> - Add Merchant
-• <code>/listsites</code> - View Sites
-• <code>/plans</code> - Subscription Plans
+<b>🔵 TOOLS & MANAGE</b>
+ ├ <code>/setproxy</code> » Set Proxy
+ ├ <code>/addsite</code>  » Add Merchant
+ └ <code>/plans</code>    » Subscription
+
+<b>╰──────────────────────────╯</b>
         """
         await callback_query.answer()
         await callback_query.edit_message_text(cmd_text, reply_markup=InlineKeyboardMarkup([
