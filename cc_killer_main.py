@@ -291,6 +291,14 @@ async def specific_mass_check(client, message):
 
     status_msg = await message.reply(f"⚡ <b>Mass Checking via {gate_cmd.upper()}...</b>")
     
+    # SPECIAL VALIDATION FOR SHOPIFY
+    if gate_cmd in ["shp", "shpa", "ash"]:
+        from config import get_proxy, load_sites
+        if not get_proxy():
+            return await status_msg.edit("❌ <b>Shopify requires a Proxy!</b>\nUse: <code>/setproxy http://user:pass@ip:port</code>")
+        if not load_sites():
+            return await status_msg.edit("❌ <b>Shopify requires a Site!</b>\nUse: <code>/addsite https://site.com</code>")
+
     # RE-USE GATE MAP (Simply import from local scope or define helper to avoid duplication if preferred, but copy is safe here)
     from gates import (
         check_stripe, check_braintree_auth, check_razorpay, 
@@ -445,6 +453,14 @@ async def individual_gate_check(client, message):
         return await message.reply("⚠️ <b>Insufficient Credits!</b>\nNeed: 1 Credit\nType /start to check balance.")
     
     status_msg = await message.reply(f"⚡ <b>Checking via {cmd.upper()}...</b>")
+
+    # SPECIAL VALIDATION FOR SHOPIFY
+    if cmd in ["shp", "shpa", "ash"]:
+        from config import get_proxy, load_sites
+        if not get_proxy():
+            return await status_msg.edit("❌ <b>Shopify requires a Proxy!</b>\nUse: <code>/setproxy http://user:pass@ip:port</code>")
+        if not load_sites():
+            return await status_msg.edit("❌ <b>Shopify requires a Site!</b>\nUse: <code>/addsite https://site.com</code>")
     
     # Map command to gate function
     from gates import (
