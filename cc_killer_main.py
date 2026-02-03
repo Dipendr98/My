@@ -12,6 +12,40 @@ from generator import generate_cards
 
 app = Client("cc_killer_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+async def get_text_from_message(client, message):
+    """Helper to get text from message OR file."""
+    # 1. Check if message has document
+    if message.document:
+        if message.document.file_size > 1024 * 1024 * 5: # 5MB Limit
+            return None, "❌ File too large (Max 5MB)."
+        if not message.document.file_name.endswith(".txt"):
+            return None, "❌ Only .txt files supported."
+        
+        dl_path = await client.download_media(message)
+        with open(dl_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        import os
+        os.remove(dl_path) # Clean up
+        return content, None
+
+    # 2. Check reply has document
+    if message.reply_to_message and message.reply_to_message.document:
+        doc = message.reply_to_message.document
+        if doc.file_size > 1024 * 1024 * 5:
+            return None, "❌ File too large."
+        if not doc.file_name.endswith(".txt"):
+            return None, "❌ Only .txt files supported."
+            
+        dl_path = await client.download_media(message.reply_to_message)
+        with open(dl_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        import os
+        os.remove(dl_path)
+        return content, None
+
+    # 3. Text fallback
+    return message.text or (message.reply_to_message.text if message.reply_to_message else ""), None
+
 @app.on_message(filters.command(["start", "help"]))
 async def start_cmd(client, message):
     # Boot Animation
@@ -289,11 +323,13 @@ async def specific_mass_check(client, message):
     if is_flood:
         return await message.reply(f"⏳ Mass checks are limited. Wait {remain}s.")
 
-    text = message.text or (message.reply_to_message.text if message.reply_to_message else "")
+    text, error = await get_text_from_message(client, message)
+    if error: return await message.reply(error)
+    
     cards = extract_cards(text)
     
     if not cards:
-        return await message.reply(f"❌ <b>No cards found.</b>\nUsage: <code>/{cmd} list_of_cards</code>")
+        return await message.reply(f"❌ <b>No cards found.</b>\nUsage: <code>/{cmd} list_of_cards</code> or upload .txt")
         
     # CREDIT CHECK
     if not update_user_credits(message.from_user.id, -5):
@@ -402,11 +438,13 @@ async def mass_check(client, message):
     if is_flood:
         return await message.reply(f"⏳ Mass checks are limited. Wait {remain}s.")
 
-    text = message.text or (message.reply_to_message.text if message.reply_to_message else "")
+    text, error = await get_text_from_message(client, message)
+    if error: return await message.reply(error)
+
     cards = extract_cards(text)
     
     if not cards:
-        return await message.reply("❌ <b>No cards found in text.</b>")
+        return await message.reply("❌ <b>No cards found in text/file.</b>")
         
     # CREDIT CHECK
     if not update_user_credits(message.from_user.id, -5):
@@ -597,22 +635,38 @@ async def set_vip_admin(client, message):
 
 @app.on_message(filters.command(["addsite", "addurl"]) & authorized_filter)
 async def add_site_cmd(client, message):
-    if len(message.command) < 2:
-        return await message.reply("❌ <b>Usage:</b> <code>/addsite https://example.com</code>")
+    text, error = await get_text_from_message(client, message)
+    if error: return await message.reply(error)
+
+    if not text:
+        return await message.reply("❌ <b>Usage:</b> <code>/addsite https://example.com</code> or upload .txt")
     
-    url = message.command[1]
+    # Support multiple sites separated by newline or comma
+    import re
+    urls = re.findall(r'https?://[^\s,]+', text)
+    
+    if not urls:
+        return await message.reply("❌ <b>No valid URLs found.</b>")
+
     from config import save_site
-    if save_site(url):
-        await message.reply(f"✅ <b>Site Added:</b> <code>{url}</code>")
-    else:
-        await message.reply("⚠️ <b>Site already exists!</b>")
+    added = 0
+    for url in urls:
+        if save_site(url):
+            added += 1
+            
+    await message.reply(f"✅ <b> {added} Sites Added!</b>")
 
 @app.on_message(filters.command(["setproxy", "addproxy"]) & authorized_filter)
 async def set_proxy_cmd(client, message):
-    if len(message.command) < 2:
-        return await message.reply("❌ <b>Usage:</b> <code>/setproxy http://user:pass@ip:port</code>")
+    text, error = await get_text_from_message(client, message)
+    if error: return await message.reply(error)
+
+    if not text:
+        return await message.reply("❌ <b>Usage:</b> <code>/setproxy http://user:pass@ip:port</code> or upload .txt")
     
-    url = message.command[1]
+    # Take the first line/url as proxy
+    url = text.split()[0] if text.split() else ""
+    
     from config import save_proxy
     if save_proxy(url):
         await message.reply(f"✅ <b>Proxy Set Successfully!</b>\n<code>{url}</code>")
