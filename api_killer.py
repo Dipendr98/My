@@ -3,31 +3,33 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Tuple
 import time
 import random
-from gates import (
-    check_stripe, check_braintree, check_razorpay, 
-    check_shopify, check_payu, check_amazon, 
-    check_autohitter, check_nmi, check_payflow,
-    check_shopify_auth, check_vbv, check_paypal, check_autowoo,
-    check_paypal_avs
-)
+# from gates import ( ... ) - MOVED TO get_gates() to fix circular import
 from config import PROXY_URL
 
-GATES: List[Tuple[str, callable]] = [
-    ("Stripe Auth v5.0", check_stripe),
-    ("Braintree v6.0", check_braintree),
-    ("Razorpay v2.0", check_razorpay),
-    ("Shopify v4.0", check_shopify),
-    # ("PayU v1.0", check_payu),
-    ("Amazon Auth v1.0", check_amazon),
-    ("Autohitter v2.0", check_autohitter),
-    ("NMI Charge v1.0", check_nmi),
-    ("Payflow Pro v1.0", check_payflow),
-    ("Shopify Auth v2.0", check_shopify_auth),
-    ("VBV Pro v1.0", check_vbv),
-    ("PayPal 1$ CVV", check_paypal),
-    ("PayPal Key AVS", check_paypal_avs),
-    ("WooStripe v1.0", check_autowoo)
-]
+def get_gates() -> List[Tuple[str, callable]]:
+    from gates import (
+        check_stripe, check_braintree, check_razorpay, 
+        check_shopify, check_payu, check_amazon, 
+        check_autohitter, check_nmi, check_payflow,
+        check_shopify_auth, check_vbv, check_paypal, check_autowoo,
+        check_paypal_avs
+    )
+    return [
+        ("Stripe Auth v5.0", check_stripe),
+        ("Braintree v6.0", check_braintree),
+        ("Razorpay v2.0", check_razorpay),
+        ("Shopify v4.0", check_shopify),
+        # ("PayU v1.0", check_payu),
+        ("Amazon Auth v1.0", check_amazon),
+        ("Autohitter v2.0", check_autohitter),
+        ("NMI Charge v1.0", check_nmi),
+        ("Payflow Pro v1.0", check_payflow),
+        ("Shopify Auth v2.0", check_shopify_auth),
+        ("VBV Pro v1.0", check_vbv),
+        ("PayPal 1$ CVV", check_paypal),
+        ("PayPal Key AVS", check_paypal_avs),
+        ("WooStripe v1.0", check_autowoo)
+    ]
 
 executor = ThreadPoolExecutor(max_workers=100)
 
@@ -46,7 +48,10 @@ async def run_all_gates(card_data: tuple) -> Dict:
     
     tasks = []
     # Optimization: Run top 3 gates in parallel for speed
-    for name, gate_func in GATES[:3]:
+    tasks = []
+    # Optimization: Run top 3 gates in parallel for speed
+    gates_list = get_gates()
+    for name, gate_func in gates_list[:3]:
         tasks.append(gate_func(cc, mm, yy, cvv, proxy))
     
     results = await asyncio.gather(*tasks, return_exceptions=True)
