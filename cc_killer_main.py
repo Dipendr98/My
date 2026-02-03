@@ -14,6 +14,11 @@ app = Client("cc_killer_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TO
 
 @app.on_message(filters.command(["start", "help"]))
 async def start_cmd(client, message):
+    # Boot Animation
+    loading_msg = await message.reply("<b>Starting OracleBot... Hold on ✋</b>")
+    await asyncio.sleep(2)
+    await loading_msg.delete()
+
     data = get_user_data(message.from_user.id)
     welcome_text = f"""
 💀 <b>WELCOME TO CC KILLER v2.0</b> 💀
@@ -716,5 +721,36 @@ async def generate_cards_cmd(client, message):
     await message.reply(response)
 
 if __name__ == "__main__":
-    print("🚀 CC KILLER v2.0 STARTING...")
-    app.run()
+    from pyrogram import idle
+    from pyrogram.types import BotCommand
+    
+    async def main():
+        await app.start()
+        print("🚀 CC KILLER v2.0 STARTED")
+        
+        # Auto-Set Commands for "/" suggestion
+        commands = [
+            BotCommand("start", "Start Bot / Menu"),
+            BotCommand("chk", "Check Single Card"),
+            BotCommand("mchk", "Mass Check (All Gates)"),
+            BotCommand("gen", "Generate Cards from BIN"),
+            BotCommand("setproxy", "Set Proxy"),
+            BotCommand("viewproxy", "View Proxy"),
+            BotCommand("str", "Check Stripe"),
+            BotCommand("mstr", "Mass Check Stripe"),
+            BotCommand("shp", "Check Shopify"),
+            BotCommand("mshp", "Mass Check Shopify"),
+            BotCommand("addsite", "Add Merchant Site"),
+            BotCommand("listsites", "View Sites"),
+            BotCommand("plans", "View Plans")
+        ]
+        try:
+            await app.set_bot_commands(commands)
+            print("✅ COMMANDS CONFIGURED")
+        except Exception as e:
+            print(f"❌ Failed to set commands: {e}")
+            
+        await idle()
+        await app.stop()
+        
+    app.run(main())
