@@ -9,7 +9,7 @@ import json
 import uuid
 from amazon_engine import AmazonEngine
 from hitter_engine import StripeHitter
-from bin_detector import detect_bin
+from bin_detector import get_bin_info as detect_bin
 from sites import HQ_SITES, NORMAL_SITES, FREE_WOO_SITES
 from us_address import get_random_address
 from phone_gen import generate_phone_number
