@@ -81,4 +81,41 @@ async def mass_killer(cards: list, status_callback=None):
     await asyncio.gather(*tasks)
     return results
 
+async def mass_specific_gate_runner(cards: list, gate_func: callable, status_callback=None):
+    """Run ONE specific gate on mass cards."""
+    semaphore = asyncio.Semaphore(50) # Slightly lower concurrency for single gate abuse safety
+    results = {}
+    
+    async def check_one(card):
+        async with semaphore:
+            cc, mm, yy, cvv = card
+            proxy = get_random_proxy()
+            # Gate func signature usually: (cc, mm, yy, cvv, proxy)
+            # Some might have variable args, but standard gates follow this.
+            # We assume gate_func is compatible.
+            try:
+                if "check_stripe_autohitter_url" in str(gate_func):
+                     # Special case for hitter if needed, but usually hitter isn't mass checked without URL
+                     # For now assume standard signature
+                     res = await gate_func(cc, mm, yy, cvv, proxy)
+                else:
+                    res = await gate_func(cc, mm, yy, cvv, proxy)
+            except Exception as e:
+                res = {"status": "error", "response": str(e), "gate": "Error"}
+            
+            # Formating result to match mass_killer output structure
+            if not isinstance(res, dict): res = {"status": "error", "response": "Invalid format"}
+            
+            res["card"] = card[0]
+            res["bin"] = card[0][:6]
+            
+            results[card[0]] = res
+            if status_callback:
+                await status_callback(len(results), len(cards))
+            return res
+
+    tasks = [check_one(card) for card in cards]
+    await asyncio.gather(*tasks)
+    return results
+
 print("✅ API_KILLER REFACTORED | Proxy & Turbo enabled")

