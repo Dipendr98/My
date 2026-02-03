@@ -1,0 +1,8 @@
+pyrogram
+tgcrypto
+python-dotenv
+aiohttp
+stripe
+braintree
+razorpay
+beautifulsoup4
