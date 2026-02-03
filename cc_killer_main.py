@@ -805,7 +805,16 @@ if __name__ == "__main__":
     from pyrogram.types import BotCommand
     
     async def main():
-        await app.start()
+        try:
+            await app.start()
+        except Exception as e:
+            if "FLOOD_WAIT" in str(e):
+                import re
+                seconds = int(re.search(r'\d+', str(e)).group())
+                print(f"⚠️ ⚠️ TELEGRAM FLOOD WAIT: YOU MUST WAIT {seconds} SECONDS ({seconds//60} MINUTES) BEFORE REDEPLOYING! ⚠️ ⚠️")
+                return
+            raise e
+
         print("🚀 CC KILLER v2.0 STARTED")
         
         # Auto-Set Commands for "/" suggestion
