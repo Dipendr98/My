@@ -125,9 +125,40 @@ async def handle_callbacks(client, callback_query):
         """
         await callback_query.answer()
         await callback_query.edit_message_text(cmd_text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 BACK", callback_data="back_start")]
+            [InlineKeyboardButton("� COMMAND GUIDE (Read Me)", callback_data="show_guide")],
+            [InlineKeyboardButton("�🔙 BACK", callback_data="back_start")]
         ]))
         
+    elif data == "show_guide":
+        guide_text = """
+<b>📘 DETAILED USER GUIDE</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+
+<b>1️⃣ WHAT ARE THE GATES?</b>
+• <b>AUTH:</b> Checks if card is live by authorizing $0 or $1 (No charge). Use: <code>/str</code>, <code>/btn</code>, <code>/as</code>.
+• <b>CHARGE:</b> Tries to charge money (e.g. $0.5, $10). Good for debit cards. Use: <code>/btc</code>, <code>/fsc</code>.
+• <b>CCN:</b> Checks if card number is valid (Live but maybe no funds). Use: <code>/skc</code>.
+
+<b>2️⃣ HOW TO MASS CHECK?</b>
+• <b>Method A (Text):</b> /mchk card1|mid|exp|cvv card2|...
+• <b>Method B (File):</b> Upload a <b>.txt</b> file with cards and caption it <code>/mchk</code> or <code>/mstr</code>.
+• <i>Turbo Mode:</i> <code>/mchk</code> checks ALL gates at once!
+
+<b>3️⃣ PROXY SYSTEM</b>
+• <b>Mandatory for Shopify:</b> Shopify blocks spam. You MUST set a proxy using <code>/setproxy</code> to use <code>/shp</code>.
+• <b>Privacy:</b> Proxies keep the bot safe and your checks anonymous.
+
+<b>4️⃣ TERMINOLOGY</b>
+• <b>Hit (Forward):</b> If a card is LIVE, it gets forwarded to the owner (You!).
+• <b>Killer:</b> The "Master" gate that tries everything.
+
+<i>"Quality over Quantity - Always check your BIN first!"</i>
+        """
+        await callback_query.answer()
+        await callback_query.edit_message_text(guide_text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📜 BACK TO COMMANDS", callback_data="show_cmds")]
+        ]))
+
     elif data == "show_sites":
         from config import load_sites
         sites = load_sites()
