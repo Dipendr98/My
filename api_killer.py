@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple
 import time
 import random
 # from gates import ( ... ) - MOVED TO get_gates() to fix circular import
-from config import PROXY_URL
+from config import get_proxy
 
 def get_gates() -> List[Tuple[str, callable]]:
     from gates import (
@@ -35,10 +35,11 @@ executor = ThreadPoolExecutor(max_workers=100)
 
 def get_random_proxy():
     """Returns a random proxy from config if available."""
-    if not PROXY_URL:
+    proxy = get_proxy()
+    if not proxy:
         return None
     # If it's a list/file, we would rotate. For now, use the single URL.
-    return PROXY_URL
+    return proxy
 
 async def run_all_gates(card_data: tuple) -> Dict:
     """Run gates parallel with proxy support."""

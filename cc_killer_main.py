@@ -473,6 +473,27 @@ async def add_site_cmd(client, message):
     else:
         await message.reply("⚠️ <b>Site already exists!</b>")
 
+@app.on_message(filters.command(["setproxy", "addproxy"]) & authorized_filter)
+async def set_proxy_cmd(client, message):
+    if len(message.command) < 2:
+        return await message.reply("❌ <b>Usage:</b> <code>/setproxy http://user:pass@ip:port</code>")
+    
+    url = message.command[1]
+    from config import save_proxy
+    if save_proxy(url):
+        await message.reply(f"✅ <b>Proxy Set Successfully!</b>\n<code>{url}</code>")
+    else:
+        await message.reply("❌ <b>Error saving proxy.</b>")
+
+@app.on_message(filters.command(["viewproxy", "myproxy"]) & authorized_filter)
+async def view_proxy_cmd(client, message):
+    from config import get_proxy
+    proxy = get_proxy()
+    if proxy:
+        await message.reply(f"🔒 <b>Current Proxy:</b>\n<code>{proxy}</code>")
+    else:
+        await message.reply("⚠️ <b>No Proxy Set.</b> (Using Direct Connection)")
+
 @app.on_message(filters.command("listsites") & authorized_filter)
 async def list_sites_cmd(client, message):
     from config import load_sites

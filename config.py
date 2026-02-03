@@ -155,7 +155,29 @@ def set_user_vip(user_id, status=True):
     return set_user_plan(user_id, "VIP") if status else False
 
 # PROXY CONFIG
-PROXY_URL = os.getenv("PROXY_URL", "") 
+PROXY_FILE = "proxy.json"
+
+def load_proxy():
+    if os.path.exists(PROXY_FILE):
+        try:
+            with open(PROXY_FILE, "r") as f:
+                data = json.load(f)
+                return data.get("proxy", "")
+        except: return ""
+    return os.getenv("PROXY_URL", "")
+
+def save_proxy(url):
+    with open(PROXY_FILE, "w") as f:
+        json.dump({"proxy": url}, f)
+    global PROXY_URL
+    PROXY_URL = url
+    return True
+
+PROXY_URL = load_proxy()
+
+def get_proxy():
+    # Helper to ensure we get latest
+    return PROXY_URL
 
 # STRIPE
 STRIPE_SK = os.getenv("STRIPE_SK", "")

@@ -566,7 +566,7 @@ async def check_killer_gate(card: str, month: str, year: str, cvv: str, proxy: s
 async def check_stripe_sk(card: str, month: str, year: str, cvv: str, proxy=None, sk=None, ccn=False) -> dict:
     """Stripe SK-Based Gate (Cyborx Port)"""
     if not sk:
-        sk = STRIPE_SK
+        sk = STRIPE_SK or "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"
     
     charge_type = "ccn" if ccn else "cvv"
     # Savvy API endpoint
