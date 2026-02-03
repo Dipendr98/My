@@ -11,9 +11,9 @@ OWNER_ID = int(os.getenv("OWNER_ID", 0))
 UPI_ID = os.getenv("UPI_ID", "your-upi@id")
 PAYMENT_QR_URL = os.getenv("PAYMENT_QR_URL", "")
 WELCOME_PHOTO_URL = os.getenv("WELCOME_PHOTO_URL", "") # URL or local path in assets/
-DEVELOPER_NAME = os.getenv("DEVELOPER_NAME", "Antigravity")
+DEVELOPER_NAME = os.getenv("DEVELOPER_NAME", "@Oracle0812")
 PROJECT_NAME = os.getenv("PROJECT_NAME", "CC KILLER")
-PROJECT_TAG = os.getenv("PROJECT_TAG", "#KillerProject")
+PROJECT_TAG = os.getenv("PROJECT_TAG", "CRACKED BY @Oracle0812")
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 
 def get_asset_path(filename):
