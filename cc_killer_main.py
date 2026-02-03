@@ -63,10 +63,11 @@ async def handle_callbacks(client, callback_query):
 ━━━━━━━━━━━━━━━━━━━━━━━
 🎯 <b>MASTER CHECK:</b>
 • <code>/chk</code> - Single CC Check
-• <code>/mchk</code> - Mass CC Check
+• <code>/mchk</code> - Mass CC Check (Turbo)
 • <code>/gen</code> - Generate Cards from BIN
 
 🏛️ <b>DEDICATED GATES:</b>
+<i>(Add 'm' for Mass Check, e.g. /mstr)</i>
 • <code>/str</code> - Stripe | <code>/az</code> - Amazon
 • <code>/shpa</code> - Shopify Auth | <code>/vbv</code> - VBV
 • <code>/ppal</code> - PayPal | <code>/ppavs</code> - PayPal AVS
@@ -78,6 +79,10 @@ async def handle_callbacks(client, callback_query):
 • <code>/bt</code> - Braintree Auth | <code>/btc</code> - Charge
 • <code>/fs</code> - FastSpring | <code>/ck</code> - CardKiller
 • <code>/ash</code> - Advanced Shopify
+
+🛡️ <b>PROXY MANAGEMENT:</b>
+• <code>/setproxy</code> - Set Proxy (http://user:pass@ip:port)
+• <code>/myproxy</code> - View Current Proxy
 
 📂 <b>MANAGEMENT:</b>
 • <code>/addsite</code> - Add Merchant
