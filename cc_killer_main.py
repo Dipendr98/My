@@ -81,7 +81,7 @@ async def start_cmd(client, message):
             InlineKeyboardButton("📂 MY SITES", callback_data="show_sites"),
         ],
         [
-            InlineKeyboardButton("💬 SUPPORT", url="https://t.me/your_support_link"),
+            InlineKeyboardButton("💬 SUPPORT", url="https://t.me/@Oracle0812"),
             InlineKeyboardButton("🔥 UPGRADE", callback_data="show_plans")
         ]
     ])
