@@ -14,7 +14,8 @@ WELCOME_PHOTO_URL = os.getenv("WELCOME_PHOTO_URL", "") # URL or local path in as
 DEVELOPER_NAME = os.getenv("DEVELOPER_NAME", "@Oracle0812")
 PROJECT_NAME = os.getenv("PROJECT_NAME", "CC KILLER")
 PROJECT_TAG = os.getenv("PROJECT_TAG", "CRACKED BY @Oracle0812")
-SHOPIFY_STORE = os.getenv("SHOPIFY_STORE", "") # Added missing var
+SHOPIFY_STORE = os.getenv("SHOPIFY_STORE", "")
+SHOPIFY_ACCESS_TOKEN = os.getenv("SHOPIFY_ACCESS_TOKEN", "")
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 
 def get_asset_path(filename):
