@@ -160,28 +160,51 @@ def set_user_vip(user_id, status=True):
 
 # PROXY CONFIG
 PROXY_FILE = "proxy.json"
+PROXY_LIST = []
 
-def load_proxy():
+def load_proxies():
+    global PROXY_LIST
     if os.path.exists(PROXY_FILE):
         try:
             with open(PROXY_FILE, "r") as f:
                 data = json.load(f)
-                return data.get("proxy", "")
-        except: return ""
-    return os.getenv("PROXY_URL", "")
+                proxies = data.get("proxies", [])
+                # Backwards compatibility check
+                if not proxies and data.get("proxy"):
+                    proxies = [data.get("proxy")]
+                PROXY_LIST = proxies
+                return proxies
+        except: pass
+    
+    # Fallback env
+    env_proxy = os.getenv("PROXY_URL", "")
+    if env_proxy:
+        PROXY_LIST = [env_proxy]
+    return PROXY_LIST
 
-def save_proxy(url):
+def save_proxies(proxies):
+    global PROXY_LIST
+    # Ensure input is a list
+    if isinstance(proxies, str):
+        proxies = [proxies]
+        
     with open(PROXY_FILE, "w") as f:
-        json.dump({"proxy": url}, f)
-    global PROXY_URL
-    PROXY_URL = url
+        json.dump({"proxies": proxies}, f)
+    PROXY_LIST = proxies
     return True
 
-PROXY_URL = load_proxy()
-
 def get_proxy():
-    # Helper to ensure we get latest
-    return PROXY_URL
+    """Returns a RANDOM proxy from the list."""
+    if not PROXY_LIST:
+        load_proxies()
+    
+    if PROXY_LIST:
+        import random
+        return random.choice(PROXY_LIST)
+    return ""
+
+# Init
+load_proxies()
 
 # STRIPE
 STRIPE_SK = os.getenv("STRIPE_SK", "")

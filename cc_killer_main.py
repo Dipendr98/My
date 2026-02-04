@@ -693,14 +693,39 @@ async def set_proxy_cmd(client, message):
     if not text:
         return await message.reply("❌ <b>Usage:</b> <code>/setproxy http://user:pass@ip:port</code> or upload .txt")
     
-    # Take the first line/url as proxy
-    url = text.split()[0] if text.split() else ""
+    lines = text.replace(",", "\n").splitlines()
+    valid_proxies = []
     
-    from config import save_proxy
-    if save_proxy(url):
-        await message.reply(f"✅ <b>Proxy Set Successfully!</b>\n<code>{url}</code>")
+    for line in lines:
+        line = line.strip()
+        if not line: continue
+        
+        # 1. Check if already HTTP format
+        if line.startswith("http"):
+            valid_proxies.append(line)
+            continue
+            
+        # 2. Parse host:port:user:pass or user:pass:host:port
+        parts = line.split(":")
+        if len(parts) == 4:
+            # Assume host:port:user:pass if first part looks like IP or domain
+            if "." in parts[0]: 
+                host, port, user, pwd = parts
+                valid_proxies.append(f"http://{user}:{pwd}@{host}:{port}")
+            else: # assume user:pass:host:port (less common but possible)
+                user, pwd, host, port = parts
+                valid_proxies.append(f"http://{user}:{pwd}@{host}:{port}")
+        elif len(parts) == 2:
+             valid_proxies.append(f"http://{line}")
+             
+    if not valid_proxies:
+        return await message.reply("❌ <b>No valid proxies found.</b> Use <code>host:port:user:pass</code> or <code>http://...</code>")
+    
+    from config import save_proxies
+    if save_proxies(valid_proxies):
+        await message.reply(f"✅ <b>{len(valid_proxies)} Proxies Loaded!</b>\n♻️ Rotating automatically.")
     else:
-        await message.reply("❌ <b>Error saving proxy.</b>")
+        await message.reply("❌ <b>Error saving proxies.</b>")
 
 @app.on_message(filters.command(["viewproxy", "myproxy"]) & authorized_filter)
 async def view_proxy_cmd(client, message):
