@@ -43,8 +43,19 @@ async def get_text_from_message(client, message):
         os.remove(dl_path)
         return content, None
 
-    # 3. Text fallback
-    return message.text or (message.reply_to_message.text if message.reply_to_message else ""), None
+    # 3. Text fallback - prioritize replied message text
+    # If user is replying with just a command, get text from the replied message
+    if message.reply_to_message and message.reply_to_message.text:
+        return message.reply_to_message.text, None
+    
+    # Check if message has text beyond just the command
+    if message.text:
+        # Strip the command itself (e.g., "/setproxy" from the start)
+        parts = message.text.split(None, 1)  # Split on first whitespace
+        if len(parts) > 1:
+            return parts[1], None  # Return text after command
+    
+    return "", None
 
 @app.on_message(filters.command(["start", "help"]))
 async def start_cmd(client, message):
