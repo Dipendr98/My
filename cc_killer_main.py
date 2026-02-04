@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, get_user_data, update_user_credits, set_user_vip, set_user_plan, UPI_ID, PAYMENT_QR_URL, WELCOME_PHOTO_URL, get_asset_path, DEVELOPER_NAME, PROJECT_NAME, PROJECT_TAG
@@ -10,7 +11,17 @@ from stlear_killer import steal_cc_killer
 from bin_detector import get_bin_info
 from generator import generate_cards
 
-app = Client("cc_killer_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Session persistence - prevents FloodWait on every deploy
+SESSION_STRING = os.getenv("SESSION_STRING", "")
+
+if SESSION_STRING:
+    # Use persistent session (no re-authentication needed)
+    app = Client("cc_killer_bot", session_string=SESSION_STRING, api_id=API_ID, api_hash=API_HASH)
+    print("✅ Using persistent session")
+else:
+    # Fallback to bot token (may cause FloodWait on frequent deploys)
+    app = Client("cc_killer_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+    print("⚠️ No SESSION_STRING set - using BOT_TOKEN (may cause FloodWait)")
 
 async def get_text_from_message(client, message):
     """Helper to get text from message OR file."""
