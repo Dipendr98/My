@@ -759,6 +759,26 @@ async def list_sites_cmd(client, message):
         msg += f"• <code>{site}</code>\n"
     await message.reply(msg)
 
+@app.on_message(filters.command(["queuestatus", "qstatus", "qs"]) & authorized_filter)
+async def queue_status_cmd(client, message):
+    from queue_manager import get_queue
+    queue = get_queue()
+    stats = queue.get_stats()
+    user_pending = queue.get_user_pending(message.from_user.id)
+    
+    status_text = f"""
+📊 <b>QUEUE STATUS</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+📥 <b>Global Queue:</b> {stats['queue_size']} cards
+⚡ <b>Active Workers:</b> {stats['active_workers']}/{stats['max_workers']}
+✅ <b>Total Processed:</b> {stats['total_processed']}
+━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Your Pending:</b> {user_pending} cards
+
+<i>VIP users get processed first!</i> 👑
+    """
+    await message.reply(status_text)
+
 @app.on_message(filters.command("plans") & authorized_filter)
 async def plans_command(client, message):
     # Reuse show_plans logic
@@ -886,6 +906,11 @@ if __name__ == "__main__":
             print("✅ COMMANDS CONFIGURED")
         except Exception as e:
             print(f"❌ Failed to set commands: {e}")
+        
+        # Initialize Queue System
+        from queue_manager import init_queue
+        await init_queue()
+        print("✅ QUEUE SYSTEM READY")
             
         await idle()
         await app.stop()
