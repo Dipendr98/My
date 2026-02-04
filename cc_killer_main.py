@@ -816,6 +816,18 @@ async def add_site_cmd(client, message):
             
     await message.reply(f"✅ <b> {added} Sites Added!</b>")
 
+@app.on_message(filters.command("listsites") & authorized_filter)
+async def list_sites_cmd(client, message):
+    from config import load_sites
+    sites = load_sites()
+    if not sites:
+        return await message.reply("📭 <b>No sites added yet.</b>")
+    
+    msg = "📂 <b>Added Sites:</b>\n"
+    for site in sites:
+        msg += f"• <code>{site}</code>\n"
+    await message.reply(msg)
+
 @app.on_message(filters.command(["setproxy", "addproxy"]) & authorized_filter)
 async def set_proxy_cmd(client, message):
     text, error = await get_text_from_message(client, message)
