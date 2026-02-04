@@ -31,7 +31,7 @@ if OWNER_ID and OWNER_ID not in AUTHORIZED_USERS:
     AUTHORIZED_USERS.append(OWNER_ID)
 
 # SITES MANAGEMENT
-SITES_FILE = "sites.json"
+SITES_FILE = os.path.join(os.path.dirname(__file__), "sites.json")
 
 def load_sites():
     if os.path.exists(SITES_FILE):
@@ -59,7 +59,7 @@ PLANS = {
 }
 
 # USERS MANAGEMENT (Credits & VIP)
-USERS_FILE = "users.json"
+USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
 from datetime import datetime, timedelta
 
 def load_users():
@@ -159,7 +159,7 @@ def set_user_vip(user_id, status=True):
     return set_user_plan(user_id, "VIP") if status else False
 
 # PROXY CONFIG
-PROXY_FILE = "proxy.json"
+PROXY_FILE = os.path.join(os.path.dirname(__file__), "proxy.json")
 PROXY_LIST = []
 
 def load_proxies():
