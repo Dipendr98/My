@@ -82,7 +82,7 @@ def get_user_data(user_id):
     if user_id_str not in users:
         # Initial gift for new users
         users[user_id_str] = {
-            "credits": 50, 
+            "credits": 10, 
             "plan": "FREE", 
             "is_vip": False, 
             "expiry": None,
