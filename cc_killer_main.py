@@ -805,15 +805,24 @@ if __name__ == "__main__":
     from pyrogram.types import BotCommand
     
     async def main():
-        try:
-            await app.start()
-        except Exception as e:
-            if "FLOOD_WAIT" in str(e):
-                import re
-                seconds = int(re.search(r'\d+', str(e)).group())
-                print(f"⚠️ ⚠️ TELEGRAM FLOOD WAIT: YOU MUST WAIT {seconds} SECONDS ({seconds//60} MINUTES) BEFORE REDEPLOYING! ⚠️ ⚠️")
-                return
-            raise e
+        # Auto-Restart Logic for FloodWait
+        while True:
+            try:
+                await app.start()
+                break # Success!
+            except Exception as e:
+                error_str = str(e)
+                if "FLOOD_WAIT" in error_str or "420" in error_str:
+                    import re
+                    match = re.search(r'\d+', error_str)
+                    seconds = int(match.group()) if match else 300
+                    wait_time = seconds + 10 # Buffer
+                    print(f"⚠️ FLOOD WAIT DETECTED! Sleeping for {wait_time}s to fix... (DO NOT RESTART)")
+                    await asyncio.sleep(wait_time)
+                    print("♻️ RETRYING CONNECTION...")
+                    # Loop continues to retry
+                else:
+                    raise e # Other errors crash normally
 
         print("🚀 CC KILLER v2.0 STARTED")
         
