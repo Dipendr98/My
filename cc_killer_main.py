@@ -106,15 +106,15 @@ async def handle_callbacks(client, callback_query):
  └ <code>/gen</code>  » Card Generator
 
 <b>🟡 GATEWAYS (Add 'm' for Mass)</b>
- ├ <code>/str</code>  ┃ <code>/az</code>  Amazon
- ├ <code>/shpa</code> ┃ <code>/vbv</code> VBV
- ├ <code>/ppal</code> ┃ <code>/as</code>  Stripe Auth
- ├ <code>/btn</code>  ┃ <code>/nmi</code> NMI
- ├ <code>/payf</code> ┃ <code>/saw</code> AutoWoo
- ├ <code>/sk</code>   ┃ <code>/skc</code> SK CCN
- ├ <code>/bt</code>   ┃ <code>/btc</code> Charge
- ├ <code>/fs</code>   ┃ <code>/ash</code> Adv Shopify
- └ <code>/hit</code>  ┃ <code>/ck</code>  Killer
+ ├ <code>/str</code>  Stripe ┃ <code>/az</code>  Amazon
+ ├ <code>/shpa</code> Shopify┃ <code>/vbv</code> VBV 3D
+ ├ <code>/ppal</code> PayPal ┃ <code>/as</code>  Stripe Auth
+ ├ <code>/btn</code>  BrainTr┃ <code>/nmi</code> NMI
+ ├ <code>/payf</code> PayFlow┃ <code>/saw</code> AutoWoo
+ ├ <code>/sk</code>   StripeSK┃ <code>/skc</code> SK CCN
+ ├ <code>/bt</code>   BrainAuth┃ <code>/btc</code> Charge
+ ├ <code>/fs</code>   FastSpr┃ <code>/ash</code> Adv Shopify
+ └ <code>/hit</code>  Hitter ┃ <code>/ck</code>  Killer
 
 <b>🔵 TOOLS & MANAGE</b>
  ├ <code>/setproxy</code> » Set Proxy
