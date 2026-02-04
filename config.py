@@ -34,11 +34,17 @@ if OWNER_ID and OWNER_ID not in AUTHORIZED_USERS:
 SITES_FILE = os.path.join(os.path.dirname(__file__), "sites.json")
 
 def load_sites():
+    # Try file first
     if os.path.exists(SITES_FILE):
         try:
             with open(SITES_FILE, "r") as f:
                 return json.load(f)
-        except: return []
+        except: pass
+    
+    # Fallback to ENV VAR (for Railway persistence)
+    env_sites = os.getenv("SITES_LIST", "")
+    if env_sites:
+        return [s.strip() for s in env_sites.split(",") if s.strip()]
     return []
 
 def save_site(url):
@@ -47,6 +53,9 @@ def save_site(url):
         sites.append(url)
         with open(SITES_FILE, "w") as f:
             json.dump(sites, f)
+        # Also print for Railway logs (user can add to env var)
+        print(f"📌 SITE ADDED: {url} | Total: {len(sites)}")
+        print(f"💡 To persist, add to Railway ENV: SITES_LIST={','.join(sites)}")
         return True
     return False
 
