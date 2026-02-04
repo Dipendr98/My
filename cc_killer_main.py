@@ -669,14 +669,17 @@ async def add_site_cmd(client, message):
     
     # Support multiple sites separated by newline or comma
     import re
-    urls = re.findall(r'https?://[^\s,]+', text)
+    # Match domains too
+    matches = re.findall(r'(?:https?://)?(?:[\w-]+\.)+[\w-]+(?:/[^\s,]*)?', text)
     
-    if not urls:
+    if not matches:
         return await message.reply("❌ <b>No valid URLs found.</b>")
 
     from config import save_site
     added = 0
-    for url in urls:
+    for url in matches:
+        if not url.startswith("http"):
+            url = "https://" + url # Auto-Prepend Protocol
         if save_site(url):
             added += 1
             
