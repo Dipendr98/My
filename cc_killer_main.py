@@ -870,14 +870,28 @@ async def set_proxy_cmd(client, message):
     else:
         await message.reply("❌ <b>Error saving proxies.</b>")
 
-@app.on_message(filters.command(["viewproxy", "myproxy"]) & authorized_filter)
+@app.on_message(filters.command(["viewproxy", "myproxy", "listproxy"]) & authorized_filter)
 async def view_proxy_cmd(client, message):
-    from config import get_proxy
-    proxy = get_proxy()
-    if proxy:
-        await message.reply(f"🔒 <b>Current Proxy:</b>\n<code>{proxy}</code>")
-    else:
-        await message.reply("⚠️ <b>No Proxy Set.</b> (Using Direct Connection)")
+    from config import PROXY_LIST, load_proxies
+    load_proxies()  # Refresh list
+    
+    if not PROXY_LIST:
+        return await message.reply("⚠️ <b>No Proxies Loaded.</b> (Using Direct Connection)")
+    
+    msg = f"🔒 <b>Loaded Proxies:</b> ({len(PROXY_LIST)} total)\n"
+    msg += "━━━━━━━━━━━━━━━━━━━\n"
+    
+    # Show first 10 proxies (truncate for readability)
+    for i, proxy in enumerate(PROXY_LIST[:10], 1):
+        # Mask password for security
+        masked = proxy[:30] + "..." if len(proxy) > 30 else proxy
+        msg += f"{i}. <code>{masked}</code>\n"
+    
+    if len(PROXY_LIST) > 10:
+        msg += f"<i>...and {len(PROXY_LIST)-10} more</i>\n"
+    
+    msg += "\n♻️ <i>Rotating automatically</i>"
+    await message.reply(msg)
 
 @app.on_message(filters.command("listsites") & authorized_filter)
 async def list_sites_cmd(client, message):
