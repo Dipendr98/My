@@ -25,12 +25,17 @@ else:
 
 async def get_text_from_message(client, message):
     """Helper to get text from message OR file."""
+    # Supported file extensions
+    ALLOWED_EXTENSIONS = ('.txt', '.cc', '.csv', '.log', '.dat', '.list')
+    
     # 1. Check if message has document
     if message.document:
         if message.document.file_size > 1024 * 1024 * 5: # 5MB Limit
             return None, "❌ File too large (Max 5MB)."
-        if not message.document.file_name.endswith(".txt"):
-            return None, "❌ Only .txt files supported."
+        
+        file_name = message.document.file_name.lower() if message.document.file_name else ""
+        if not any(file_name.endswith(ext) for ext in ALLOWED_EXTENSIONS):
+            return None, f"❌ Supported formats: {', '.join(ALLOWED_EXTENSIONS)}"
         
         dl_path = await client.download_media(message)
         with open(dl_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -44,8 +49,10 @@ async def get_text_from_message(client, message):
         doc = message.reply_to_message.document
         if doc.file_size > 1024 * 1024 * 5:
             return None, "❌ File too large."
-        if not doc.file_name.endswith(".txt"):
-            return None, "❌ Only .txt files supported."
+        
+        file_name = doc.file_name.lower() if doc.file_name else ""
+        if not any(file_name.endswith(ext) for ext in ALLOWED_EXTENSIONS):
+            return None, f"❌ Supported formats: {', '.join(ALLOWED_EXTENSIONS)}"
             
         dl_path = await client.download_media(message.reply_to_message)
         with open(dl_path, "r", encoding="utf-8", errors="ignore") as f:
