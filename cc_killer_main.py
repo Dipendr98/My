@@ -106,15 +106,15 @@ async def handle_callbacks(client, callback_query):
  └ <code>/gen</code>  » Card Generator
 
 <b>🟡 GATEWAYS (Add 'm' for Mass)</b>
- ├ <code>/str</code>  Stripe ┃ <code>/az</code>  Amazon
- ├ <code>/shpa</code> Shopify┃ <code>/vbv</code> VBV 3D
- ├ <code>/ppal</code> PayPal ┃ <code>/as</code>  Stripe Auth
- ├ <code>/btn</code>  BrainTr┃ <code>/nmi</code> NMI
- ├ <code>/payf</code> PayFlow┃ <code>/saw</code> AutoWoo
- ├ <code>/sk</code>   StripeSK┃ <code>/skc</code> SK CCN
- ├ <code>/bt</code>   BrainAuth┃ <code>/btc</code> Charge
- ├ <code>/fs</code>   FastSpr┃ <code>/ash</code> Adv Shopify
- └ <code>/hit</code>  Hitter ┃ <code>/ck</code>  Killer
+ <code>/str  - Stripe</code>   ┃ <code>/az   - Amazon</code>
+ <code>/shpa - Shopify</code>  ┃ <code>/vbv  - VBV 3D</code>
+ <code>/ppal - PayPal</code>   ┃ <code>/as   - S-Auth</code>
+ <code>/btn  - BrainTr</code>  ┃ <code>/nmi  - NMI</code>
+ <code>/payf - PayFlow</code>  ┃ <code>/saw  - AutoWoo</code>
+ <code>/sk   - StripeSK</code> ┃ <code>/skc  - SK CCN</code>
+ <code>/bt   - BrainAuth</code>┃ <code>/btc  - Charge</code>
+ <code>/fs   - FastSpr</code>  ┃ <code>/ash  - AdvShop</code>
+ <code>/hit  - Hitter</code>   ┃ <code>/ck   - Killer</code>
 
 <b>🔵 TOOLS & MANAGE</b>
  ├ <code>/setproxy</code> » Set Proxy
