@@ -19,11 +19,15 @@ SHOPIFY_ACCESS_TOKEN = os.getenv("SHOPIFY_ACCESS_TOKEN", "")
 
 # Gateway API Keys (from env vars or defaults)
 STRIPE_SK = os.getenv("STRIPE_SK", "")
+STRIPE_HITTER_API = os.getenv("STRIPE_HITTER_API", "https://stripe-hitter.onrender.com/stripe/checkout-based/url/{YOUR_CHECKOUT_URL}/pay/cc/{YOUR_CC}")
 BT_MERCHANT_ID = os.getenv("BT_MERCHANT_ID", "")
 BT_PUBLIC_KEY = os.getenv("BT_PUBLIC_KEY", "")
 BT_PRIVATE_KEY = os.getenv("BT_PRIVATE_KEY", "")
-RZP_KEY_ID = os.getenv("RZP_KEY_ID", "")
-RZP_KEY_SECRET = os.getenv("RZP_KEY_SECRET", "")
+RZP_KEY_ID = os.getenv("RZP_KEY_ID", os.getenv("RAZORPAY_KEY", ""))
+RZP_KEY_SECRET = os.getenv("RZP_KEY_SECRET", os.getenv("RAZORPAY_SECRET", ""))
+RAZORPAY_KEY = os.getenv("RAZORPAY_KEY", "")
+RAZORPAY_SECRET = os.getenv("RAZORPAY_SECRET", "")
+RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
 PAYU_MERCHANT_KEY = os.getenv("PAYU_MERCHANT_KEY", "")
 PAYU_MERCHANT_SALT = os.getenv("PAYU_MERCHANT_SALT", "")
 PROXY_URL = os.getenv("PROXY_URL", "")
@@ -248,6 +252,52 @@ def get_proxy():
 
 # Init
 load_proxies()
+
+# AUTOHITTER URLs MANAGEMENT
+HITTER_URLS_FILE = os.path.join(os.path.dirname(__file__), "hitter_urls.json")
+
+def load_hitter_urls():
+    """Load saved autohitter URLs."""
+    if os.path.exists(HITTER_URLS_FILE):
+        try:
+            with open(HITTER_URLS_FILE, "r") as f:
+                return json.load(f)
+        except: pass
+    return {"stripe": [], "braintree": []}
+
+def save_hitter_urls(data):
+    """Save autohitter URLs."""
+    with open(HITTER_URLS_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+    return True
+
+def add_hitter_url(gateway: str, url: str) -> bool:
+    """Add a hitter URL for a specific gateway (stripe/braintree)."""
+    data = load_hitter_urls()
+    gateway = gateway.lower()
+    if gateway not in data:
+        data[gateway] = []
+    if url not in data[gateway]:
+        data[gateway].append(url)
+        save_hitter_urls(data)
+        print(f"📌 HITTER URL ADDED ({gateway}): {url}")
+        return True
+    return False
+
+def remove_hitter_url(gateway: str, url: str) -> bool:
+    """Remove a hitter URL for a specific gateway."""
+    data = load_hitter_urls()
+    gateway = gateway.lower()
+    if gateway in data and url in data[gateway]:
+        data[gateway].remove(url)
+        save_hitter_urls(data)
+        return True
+    return False
+
+def get_hitter_urls(gateway: str) -> list:
+    """Get all hitter URLs for a specific gateway."""
+    data = load_hitter_urls()
+    return data.get(gateway.lower(), [])
 
 # STRIPE
 STRIPE_SK = os.getenv("STRIPE_SK", "")

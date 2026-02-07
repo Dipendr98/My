@@ -6,3 +6,4 @@ stripe
 braintree
 razorpay
 beautifulsoup4
+asyncpg

