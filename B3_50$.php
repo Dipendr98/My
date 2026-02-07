@@ -3,8 +3,6 @@
 ob_start();
 
 $Gate = 'Braintree Charge $5.00';
-$credits = "@Eleosvanberg";
-$bot = "@CyraCc_Bot ";
 $lista = $_GET['lista'];
 preg_match_all("/([\d]+\d)/", $lista, $list);
 $cc = $list[0][0];
