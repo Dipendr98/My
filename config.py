@@ -205,6 +205,47 @@ def set_user_plan(user_id, plan_name):
 def set_user_vip(user_id, status=True):
     return set_user_plan(user_id, "VIP") if status else False
 
+def grant_feature(user_id, feature):
+    """Grant a specific feature access (steam, b3, mass_razorpay)."""
+    users = load_users()
+    user_id_str = str(user_id)
+    if user_id_str not in users:
+        get_user_data(user_id)
+        users = load_users()
+        
+    if "features" not in users[user_id_str]:
+        users[user_id_str]["features"] = []
+        
+    if feature not in users[user_id_str]["features"]:
+        users[user_id_str]["features"].append(feature)
+        save_users(users)
+        return True
+    return False
+
+def revoke_feature(user_id, feature):
+    users = load_users()
+    user_id_str = str(user_id)
+    
+    if user_id_str in users and "features" in users[user_id_str]:
+        if feature in users[user_id_str]["features"]:
+            users[user_id_str]["features"].remove(feature)
+            save_users(users)
+            return True
+    return False
+
+def has_feature_access(user_id, feature):
+    """Check if user has access to a feature."""
+    if user_id in AUTHORIZED_USERS or user_id == OWNER_ID:
+        return True
+        
+    data = get_user_data(user_id)
+    features = data.get("features", [])
+    
+    if feature in features:
+        return True
+        
+    return False
+
 # PROXY CONFIG
 PROXY_FILE = os.path.join(os.path.dirname(__file__), "proxy.json")
 PROXY_LIST = []

