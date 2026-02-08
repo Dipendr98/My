@@ -852,7 +852,7 @@ async def b3_charge_cmd(client, message):
 def get_gate_function(gate_key: str, check_type: str):
     """Returns the appropriate gate function based on gate key and check type."""
     from gates import (
-        check_stripe, check_braintree_auth, check_razorpay, check_razorpay_charge,
+        check_stripe, check_braintree, check_razorpay, check_razorpay_charge,
         check_shopify, check_shopify_auth, check_payu, check_amazon, 
         check_autohitter, check_nmi, check_payflow,
         check_vbv, check_paypal, check_paypal_avs, check_autowoo,
@@ -869,7 +869,7 @@ def get_gate_function(gate_key: str, check_type: str):
             "paypal": check_paypal,
             "razorpay": check_razorpay,
             "stripe": check_stripe,
-            "braintree": check_braintree_auth,
+            "braintree": check_braintree,
             "nmi": check_nmi,
             "payflow": check_payflow,
             "vbv": check_vbv,
