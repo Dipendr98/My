@@ -854,6 +854,7 @@ def get_gate_function(gate_key: str, check_type: str):
     from gates import (
         check_stripe, check_braintree, check_razorpay, check_razorpay_charge,
         check_shopify, check_shopify_auth, check_payu, check_amazon, 
+        check_autohitter, check_nmi, check_payflow,
         check_vbv, check_paypal, check_paypal_avs,
         check_braintree_auth2, check_braintree_charge,
         check_stripe_sk, check_stripe_nonsk, check_stripe_autowoo,
