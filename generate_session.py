@@ -28,5 +28,5 @@ with Client("temp_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKE
     print("=" * 50)
     print(session_string)
     print("=" * 50)
-    print("\n✅ Add this to Railway as: SESSION_STRING")
-    print("⚠️ Keep this SECRET - it gives full bot access!")
+    print("\n  Add this to Railway as: SESSION_STRING")
+    print("  Keep this SECRET - it gives full bot access!")
