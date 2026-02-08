@@ -9,3 +9,5 @@ beautifulsoup4
 aiomysql
 requests
 pycryptodome
+PyMySQL
+cryptography
