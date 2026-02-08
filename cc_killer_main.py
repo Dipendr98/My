@@ -1417,17 +1417,12 @@ async def register_cmd(client, message):
             f"Use /profile to view your profile."
         )
     
-    # Check for referral code in command
-    referral_code = None
-    if len(message.command) > 1:
-        referral_code = message.command[1].strip().upper()
-    
     # Register user
     user_data = await db.create_user(
         user_id=user_id,
         username=user.username,
         first_name=user.first_name,
-        referral_code=referral_code
+        referral_code=None
     )
     
     if user_data:
@@ -1437,12 +1432,9 @@ async def register_cmd(client, message):
 👤 <b>User:</b> {user.first_name}
 🆔 <b>ID:</b> <code>{user_id}</code>
 💳 <b>Credits:</b> 10 (Welcome Gift!)
-🎁 <b>Your Referral Code:</b> <code>{user_data.get('referral_code')}</code>
 """
-        if referral_code and user_data.get('referred_by'):
-            welcome_msg += f"\n✅ <b>Referred by:</b> User #{user_data.get('referred_by')} (They got +10 credits!)"
         
-        welcome_msg += "\n\nUse /profile to view your profile and /referral to share your code!"
+        welcome_msg += "\n\nUse /profile to view your profile."
         
         await message.reply(welcome_msg)
     else:
@@ -1457,7 +1449,7 @@ async def profile_cmd(client, message):
     if not user_data or not user_data.get('is_registered'):
         return await message.reply("❌ <b>Not registered!</b>\nUse /register to create your account.")
     
-    referral_stats = await db.get_referral_stats(user_id)
+
     
     profile_text = f"""
 👤 <b>YOUR PROFILE</b>
@@ -1471,46 +1463,12 @@ async def profile_cmd(client, message):
 {'<b>VIP:</b> ✅ Yes' if user_data.get('is_vip') else ''}
 {f"<b>Expiry:</b> {user_data.get('expiry')}" if user_data.get('expiry') else ''}
 
-🎁 <b>REFERRAL STATS</b>
-├ 🔗 Code: <code>{referral_stats.get('referral_code', 'N/A')}</code>
-└ 👥 Referrals: {referral_stats.get('referral_count', 0)}
-
 📅 <b>Joined:</b> {user_data.get('joined_at', 'N/A')}
     """
     
     await message.reply(profile_text)
 
-@app.on_message(filters.command("referral"))
-async def referral_cmd(client, message):
-    """Get referral link and stats."""
-    user_id = message.from_user.id
-    user_data = await db.get_user(user_id)
-    
-    if not user_data or not user_data.get('is_registered'):
-        return await message.reply("❌ <b>Not registered!</b>\nUse /register to create your account.")
-    
-    referral_code = user_data.get('referral_code')
-    referral_count = user_data.get('referral_count', 0)
-    
-    # Get bot username for deep link
-    bot_info = await client.get_me()
-    bot_username = bot_info.username
-    
-    referral_text = f"""
-🎁 <b>YOUR REFERRAL LINK</b>
-━━━━━━━━━━━━━━━━━━━━━━━
-🔗 <b>Your Code:</b> <code>{referral_code}</code>
-📎 <b>Share Link:</b>
-<code>https://t.me/{bot_username}?start=ref_{referral_code}</code>
 
-📊 <b>Stats:</b>
-├ 👥 Total Referrals: {referral_count}
-└ 💰 Credits Earned: {referral_count * 10}
-
-<i>💡 Share your code! When someone registers with your code, YOU get <b>+10 Credits!</b></i>
-    """
-    
-    await message.reply(referral_text)
 
 @app.on_message(filters.command("users") & filters.user(OWNER_ID))
 async def admin_users_cmd(client, message):
@@ -1579,7 +1537,6 @@ if __name__ == "__main__":
             BotCommand("start", "Start Bot / Menu"),
             BotCommand("register", "Register Account"),
             BotCommand("profile", "View Profile"),
-            BotCommand("referral", "Get Referral Link"),
             BotCommand("chk", "Check Single Card"),
             BotCommand("mchk", "Mass Check Cards"),
             BotCommand("kl", "CC Killer (Single)"),
