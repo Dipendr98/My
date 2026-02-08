@@ -296,7 +296,8 @@ async def handle_callbacks(client, callback_query):
 <b>🟢 MAIN COMMANDS</b>
  ├ <code>/chk</code> » Single Card Checker
  ├ <code>/mchk</code> » Mass Card Checker
- └ <code>/kl</code>  » CC Killer (Single)
+ ├ <code>/kl</code>  » CC Killer (Single)
+ └ <code>/b3</code>  » B3 Charge ($54)
 
 <b>🔵 TOOLS & MANAGE</b>
  ├ <code>/gen</code> » Card Generator
@@ -1578,6 +1579,7 @@ if __name__ == "__main__":
             BotCommand("chk", "Check Single Card"),
             BotCommand("mchk", "Mass Check Cards"),
             BotCommand("kl", "CC Killer (Single)"),
+            BotCommand("b3", "B3 Charge ($54)"),
             BotCommand("steam", "Steam Account Checker"),
             BotCommand("gen", "Generate Cards from BIN"),
             BotCommand("setproxy", "Set Proxy"),
