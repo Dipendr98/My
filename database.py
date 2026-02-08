@@ -135,61 +135,18 @@ async def mysql_get_user(user_id: int) -> dict:
 
 async def mysql_create_user(user_id: int, username: str = None, first_name: str = None, referred_by_code: str = None) -> dict:
     """Create new user in MySQL."""
-    referral_code = generate_referral_code(user_id)
-    referred_by = None
-    
-    # Check if referred by code exists
-    if referred_by_code:
-        async with db_pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cur:
-                await cur.execute('SELECT user_id FROM users WHERE referral_code = %s', (referred_by_code.upper(),))
-                referrer = await cur.fetchone()
-                if referrer and referrer['user_id'] != user_id:
-                    referred_by = referrer['user_id']
-    
     async with db_pool.acquire() as conn:
         async with conn.cursor() as cur:
             # Upsert User
             await cur.execute('''
-                INSERT INTO users (user_id, username, first_name, referral_code, referred_by, credits, is_registered, features)
-                VALUES (%s, %s, %s, %s, %s, 10, TRUE, '[]')
+                INSERT INTO users (user_id, username, first_name, credits, is_registered, features)
+                VALUES (%s, %s, %s, 10, TRUE, '[]')
                 ON DUPLICATE KEY UPDATE 
                     username = VALUES(username),
                     first_name = VALUES(first_name),
                     is_registered = TRUE,
                     last_active = CURRENT_TIMESTAMP
-            ''', (user_id, username, first_name, referral_code, referred_by))
-            
-            # If referred, add referral tracking and give credits to referrer
-            if referred_by:
-                try:
-                    # Insert referral record
-                    await cur.execute('''
-                        INSERT IGNORE INTO referrals (referrer_id, referred_id, credited)
-                        VALUES (%s, %s, FALSE)
-                    ''', (referred_by, user_id))
-                    
-                    # Check if credited
-                    await cur.execute(
-                        'SELECT credited FROM referrals WHERE referrer_id = %s AND referred_id = %s',
-                        (referred_by, user_id)
-                    )
-                    ref_row = await cur.fetchone()
-                    
-                    if ref_row and not ref_row[0]: # 0 is 'credited' col index
-                        # Give 10 credits to referrer
-                        await cur.execute(
-                            'UPDATE users SET credits = credits + 10, referral_count = referral_count + 1 WHERE user_id = %s',
-                            (referred_by,)
-                        )
-                        # Mark as credited
-                        await cur.execute(
-                            'UPDATE referrals SET credited = TRUE WHERE referrer_id = %s AND referred_id = %s',
-                            (referred_by, user_id)
-                        )
-                        print(f"✅ Referral Credit: +10 to user {referred_by} from {user_id}")
-                except Exception as e:
-                    print(f"Referral error: {e}")
+            ''', (user_id, username, first_name))
     
     return await mysql_get_user(user_id)
 
@@ -390,34 +347,14 @@ def sqlite_get_user(user_id: int) -> dict:
 
 def sqlite_create_user(user_id: int, username: str = None, first_name: str = None, referred_by_code: str = None) -> dict:
     """Create new user in SQLite."""
-    referral_code = generate_referral_code(user_id)
-    referred_by = None
-    
     conn = sqlite3.connect(SQLITE_DB)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    # Check referrer
-    if referred_by_code:
-        cursor.execute('SELECT user_id FROM users WHERE referral_code = ?', (referred_by_code.upper(),))
-        referrer = cursor.fetchone()
-        if referrer and referrer['user_id'] != user_id:
-            referred_by = referrer['user_id']
-    
     cursor.execute('''
-        INSERT OR REPLACE INTO users (user_id, username, first_name, referral_code, referred_by, credits, is_registered, features)
-        VALUES (?, ?, ?, ?, ?, 10, 1, '[]')
-    ''', (user_id, username, first_name, referral_code, referred_by))
-    
-    # Handle referral
-    if referred_by:
-        cursor.execute('SELECT credited FROM referrals WHERE referrer_id = ? AND referred_id = ?', (referred_by, user_id))
-        ref_row = cursor.fetchone()
-        
-        if not ref_row:
-            cursor.execute('INSERT INTO referrals (referrer_id, referred_id, credited) VALUES (?, ?, 0)', (referred_by, user_id))
-            cursor.execute('UPDATE users SET credits = credits + 10, referral_count = referral_count + 1 WHERE user_id = ?', (referred_by,))
-            cursor.execute('UPDATE referrals SET credited = 1 WHERE referrer_id = ? AND referred_id = ?', (referred_by, user_id))
+        INSERT OR REPLACE INTO users (user_id, username, first_name, credits, is_registered, features)
+        VALUES (?, ?, ?, 10, 1, '[]')
+    ''', (user_id, username, first_name))
     
     conn.commit()
     conn.close()

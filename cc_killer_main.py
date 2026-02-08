@@ -106,30 +106,15 @@ async def start_cmd(client, message):
     user = message.from_user
     user_id = user.id
     
-    # Check for referral deep link (e.g. /start ref_ABCD1234)
-    referral_code = None
-    # Check for referral deep link (e.g. /start ref_ABCD1234)
-    referral_code = None
-    if message.command and len(message.command) > 1 and message.command[1].startswith("ref_"):
-        referral_code = message.command[1].replace("ref_", "").upper()
-        
-        # Check if user is already registered
-        existing = await db.get_user(user_id)
-        if not existing or not existing.get('is_registered'):
-            # Auto-register with referral
-            user_data = await db.create_user(
-                user_id=user_id,
-                username=user.username,
-                first_name=user.first_name,
-                referral_code=referral_code
-            )
-            if user_data and user_data.get('referred_by'):
-                await message.reply(
-                    f"🎉 <b>Welcome! You've been referred!</b>\n\n"
-                    f"✅ Auto-registered with referral code: <code>{referral_code}</code>\n"
-                    f"💳 You received 10 FREE credits!\n"
-                    f"🎁 Your referrer got +10 credits too!"
-                )
+    # Check if user is already registered
+    existing = await db.get_user(user_id)
+    if not existing or not existing.get('is_registered'):
+        # Auto-register
+        await db.create_user(
+            user_id=user_id,
+            username=user.username,
+            first_name=user.first_name
+        )
 
     await show_main_menu(client, message, user_id, is_edit=False)
 
@@ -161,7 +146,6 @@ async def show_main_menu(client, message, user_id, is_edit=False):
 • <code>/chk</code> » Single Card Checker
 • <code>/mchk</code> » Mass Card Checker
 • <code>/kl</code> » CC Killer (Single)
-• <code>/referral</code> » Earn Credits!
 
 <b>Press the buttons below to interact:</b>
 """
@@ -238,10 +222,7 @@ async def handle_callbacks(client, callback_query):
                 f"🎉 <b>REGISTRATION SUCCESSFUL!</b>\n\n"
                 f"👤 <b>Name:</b> {user.first_name}\n"
                 f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
-                f"💳 <b>Credits:</b> 10 (Welcome Gift!)\n"
-                f"🎁 <b>Your Referral Code:</b> <code>{user_data.get('referral_code')}</code>\n\n"
-                f"Share your referral code to earn +10 credits for each signup!\n"
-                f"Use /referral to get your share link.",
+                f"💳 <b>Credits:</b> 10 (Welcome Gift!)\n",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data="back_start")]])
             )
         return
@@ -260,38 +241,14 @@ async def handle_callbacks(client, callback_query):
             f"👤 <b>Name:</b> {user_data.get('first_name', 'N/A')}\n"
             f"🆔 <b>ID:</b> <code>{user_id}</code>\n\n"
             f"💰 <b>Credits:</b> {'UNLIMITED' if user_data.get('is_vip') else user_data.get('credits', 0)}\n"
-            f"📈 <b>Plan:</b> {user_data.get('plan', 'FREE')}\n\n"
-            f"🎁 <b>Referral Code:</b> <code>{user_data.get('referral_code', 'N/A')}</code>\n"
-            f"👥 <b>Referrals:</b> {user_data.get('referral_count', 0)}",
+            f"📈 <b>Plan:</b> {user_data.get('plan', 'FREE')}",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 GET REFERRAL LINK", callback_data="show_referral")],
                 [InlineKeyboardButton("🔙 BACK", callback_data="back_start")]
             ])
         )
         return
     
-    # Show referral link
-    elif data == "show_referral":
-        user_data = await db.get_user(user_id)
-        if not user_data:
-            await callback_query.answer("Not registered!")
-            return
-        
-        bot_info = await client.get_me()
-        referral_link = f"https://t.me/{bot_info.username}?start=ref_{user_data.get('referral_code')}"
-        
-        await callback_query.answer()
-        await callback_query.edit_message_text(
-            f"🎁 <b>YOUR REFERRAL LINK</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔗 <b>Code:</b> <code>{user_data.get('referral_code')}</code>\n\n"
-            f"📎 <b>Share Link:</b>\n<code>{referral_link}</code>\n\n"
-            f"👥 <b>Total Referrals:</b> {user_data.get('referral_count', 0)}\n"
-            f"💰 <b>Credits Earned:</b> {user_data.get('referral_count', 0) * 10}\n\n"
-            f"<i>💡 Share your link! +10 credits per signup!</i>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data="quick_profile")]])
-        )
-        return
+
     
     elif data == "show_cmds":
         cmd_text = """
