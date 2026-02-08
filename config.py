@@ -168,7 +168,8 @@ def update_user_credits(user_id, amount):
         
     data = get_user_data(user_id) # also handles expiry check
     
-    if data["is_vip"] or data["plan"] == "VIP":
+    # VIP / ULTIMATE USERS = UNLIMITED CREDITS
+    if data.get("is_vip") or data.get("plan") in ["VIP", "ULTIMATE"]:
         return True
     
     if data["credits"] + amount < 0:
@@ -244,6 +245,11 @@ def has_feature_access(user_id, feature):
         return True
         
     data = get_user_data(user_id)
+    
+    # VIPs have access to EVERYTHING
+    if data.get("is_vip"):
+        return True
+        
     features = data.get("features", [])
     
     if feature in features:
