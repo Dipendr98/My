@@ -400,7 +400,8 @@ async def handle_callbacks(client, callback_query):
         """
         await callback_query.answer()
         await callback_query.edit_message_text(plans_text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔰 BASIC", callback_data="req_BASIC"), InlineKeyboardButton("🚀 STANDARD", callback_data="req_STANDARD")],
+            [InlineKeyboardButton("� PREMIUM ADD-ONS", callback_data="show_addons")],
+            [InlineKeyboardButton("�🔰 BASIC", callback_data="req_BASIC"), InlineKeyboardButton("🚀 STANDARD", callback_data="req_STANDARD")],
             [InlineKeyboardButton("👑 ULTIMATE", callback_data="req_ULTIMATE")],
             [InlineKeyboardButton("🛡️ VIP", callback_data="req_VIP")],
             [InlineKeyboardButton("🖼️ VIEW QR", callback_data="show_payment")],
@@ -460,13 +461,79 @@ async def handle_callbacks(client, callback_query):
             await client.send_message(target_user_id, f"🎉 <b>CONGRATULATIONS!</b>\nYour request for the <b>{plan}</b> plan has been <b>APPROVED</b> by the owner!\nType /start to see your updated balance.")
         except: pass
 
+        except: pass
+
+    elif data == "show_addons":
+        addons_text = """
+🌟 <b>PREMIUM ADD-ONS</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+Select an add-on to request:
+
+🎮 <b>Steam Checker ($10)</b>
+• Check Steam accounts for games/value.
+
+💳 <b>B3 Charge ($15)</b>
+• Specialized B3 Charge gate ($54).
+
+🔷 <b>Mass Razorpay ($10)</b>
+• Ultra-fast Mass Razorpay checker.
+
+<i>Request will be sent to admin for approval.</i>
+        """
+        await callback_query.answer()
+        await callback_query.edit_message_text(addons_text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎮 Request Steam", callback_data="reqfeat_steam")],
+            [InlineKeyboardButton("💳 Request B3 Charge", callback_data="reqfeat_b3")],
+            [InlineKeyboardButton("🔷 Request Mass Razorpay", callback_data="reqfeat_mass_razorpay")],
+            [InlineKeyboardButton("🔙 BACK", callback_data="show_plans")]
+        ]))
+
+    elif data.startswith("reqfeat_"):
+        feature = data.split("_", 1)[1]
+        user = callback_query.from_user
+        await callback_query.answer(f"Request for {feature} sent!", show_alert=True)
+        
+        owner_msg = f"""
+🆕 <b>FEATURE REQUEST</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>User:</b> {user.first_name}
+🆔 <b>ID:</b> <code>{user.id}</code>
+🌟 <b>Feature:</b> {feature}
+        """
+        await client.send_message(
+            OWNER_ID, 
+            owner_msg, 
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("✅ APPROVE", callback_data=f"appfeat_{feature}:{user.id}"),
+                    InlineKeyboardButton("❌ DECLINE", callback_data=f"dec_{user.id}")
+                ]
+            ])
+        )
+        await callback_query.edit_message_text(f"✅ <b>Request for {feature} Sent!</b>\nPlease wait for approval.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data="show_addons")]]))
+
+    elif data.startswith("appfeat_"):
+        _, payload = data.split("_", 1)
+        feature, target_user_id = payload.split(":")
+        target_user_id = int(target_user_id)
+        
+        if grant_feature(target_user_id, feature):
+            await callback_query.answer(f"Granted {feature} to {target_user_id}!")
+            await callback_query.edit_message_text(f"✅ <b>Approved!</b>\nGranted <b>{feature}</b> to User <code>{target_user_id}</code>.")
+            
+            try:
+                await client.send_message(target_user_id, f"🎉 <b>CONGRATULATIONS!</b>\nYour request for <b>{feature}</b> has been <b>APPROVED</b>!\nYou can now use this feature.")
+            except: pass
+        else:
+            await callback_query.answer("User already has this feature or error.")
+
     elif data.startswith("dec_"):
         target_user_id = int(data.split("_")[1])
         await callback_query.answer(f"Request for {target_user_id} declined.")
         await callback_query.edit_message_text(f"❌ <b>Declined!</b>\nUser <code>{target_user_id}</code> request was rejected.")
         
         try:
-            await client.send_message(target_user_id, "❌ <b>SORRY!</b>\nYour plan request was <b>DECLINED</b> by the owner. Please contact support for more info.")
+            await client.send_message(target_user_id, "❌ <b>SORRY!</b>\nYour request was <b>DECLINED</b> by the owner. Please contact support.")
         except: pass
 
     # ========== SINGLE CHECK (/chk) FLOW ==========
