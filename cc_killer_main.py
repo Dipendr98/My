@@ -1261,7 +1261,7 @@ async def add_site_cmd(client, message):
             added += 1
             
     if added > 0:
-        await status_msg.edit(f"✅ <b>Verified & Added {added} Sites!</b>\n\nDiscarded {len(matches) - added} invalid/dead sites.")
+        await status_msg.edit(f"✅ <b>Verified & Saved {added} Sites to Database!</b>\n\nDiscarded {len(matches) - added} invalid/dead sites.")
     else:
         await status_msg.edit("❌ <b>No valid live sites found.</b>")
 
@@ -1322,7 +1322,7 @@ async def set_proxy_cmd(client, message):
             
     if added > 0:
         await refresh_proxy_cache()
-        await status_msg.edit(f"✅ <b>Parsed {len(candidates)} -> Added {added} Live Proxies!</b>\n♻️ Cache refreshed.")
+        await status_msg.edit(f"✅ <b>Parsed {len(candidates)} -> Saved {added} Live Proxies to Database!</b>\n♻️ Cache refreshed.")
     else:
         await status_msg.edit("❌ <b>All proxies were DEAD or invalid.</b>")
 

@@ -25,11 +25,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 # Global connection pool
 db_pool = None
 
-def generate_referral_code(user_id: int) -> str:
-    """Generate unique referral code for user."""
-    base = f"{user_id}{datetime.now().timestamp()}"
-    hash_obj = hashlib.md5(base.encode())
-    return hash_obj.hexdigest()[:8].upper()
+
 
 # ============ MySQL Functions ============
 async def init_mysql():
@@ -83,9 +79,6 @@ async def init_mysql():
                         plan VARCHAR(255) DEFAULT 'FREE',
                         is_vip BOOLEAN DEFAULT FALSE,
                         is_registered BOOLEAN DEFAULT FALSE,
-                        referral_code VARCHAR(255) UNIQUE,
-                        referred_by BIGINT,
-                        referral_count INTEGER DEFAULT 0,
                         expiry TIMESTAMP NULL,
                         features JSON,
                         joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -93,18 +86,7 @@ async def init_mysql():
                     )
                 ''')
                 
-                # Create referrals tracking table
-                await cur.execute('''
-                    CREATE TABLE IF NOT EXISTS referrals (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        referrer_id BIGINT NOT NULL,
-                        referred_id BIGINT NOT NULL UNIQUE,
-                        credited BOOLEAN DEFAULT FALSE,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (referrer_id) REFERENCES users(user_id),
-                        FOREIGN KEY (referred_id) REFERENCES users(user_id)
-                    )
-                ''')
+
 
                 # Create proxies table
                 await cur.execute('''
@@ -362,15 +344,7 @@ def init_sqlite():
         )
     ''')
     
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS referrals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            referrer_id INTEGER NOT NULL,
-            referred_id INTEGER NOT NULL UNIQUE,
-            credited INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS proxies (
