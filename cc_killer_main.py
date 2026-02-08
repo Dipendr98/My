@@ -461,8 +461,6 @@ async def handle_callbacks(client, callback_query):
             await client.send_message(target_user_id, f"🎉 <b>CONGRATULATIONS!</b>\nYour request for the <b>{plan}</b> plan has been <b>APPROVED</b> by the owner!\nType /start to see your updated balance.")
         except: pass
 
-        except: pass
-
     elif data == "show_addons":
         addons_text = """
 🌟 <b>PREMIUM ADD-ONS</b>
