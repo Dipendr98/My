@@ -1229,6 +1229,44 @@ async def set_vip_admin(client, message):
     except Exception as e:
         await message.reply(f"❌ <b>Error:</b> {e}")
 
+@app.on_message(filters.command("grant") & authorized_filter)
+async def grant_cmd(client, message):
+    if len(message.command) < 3:
+        return await message.reply("❌ <b>Usage:</b> <code>/grant user_id feature_name</code>\n(e.g. steam, b3, mass_razorpay)")
+        
+    try:
+        user_id = int(message.command[1])
+        feature = message.command[2].lower()
+        
+        if grant_feature(user_id, feature):
+            await message.reply(f"✅ <b>Granted '{feature}' to User {user_id}.</b>")
+        else:
+            await message.reply(f"⚠️ <b>User {user_id} already has '{feature}'.</b>")
+            
+    except ValueError:
+        await message.reply("❌ <b>Invalid User ID.</b>")
+    except Exception as e:
+        await message.reply(f"❌ <b>Error:</b> {e}")
+
+@app.on_message(filters.command("revoke") & authorized_filter)
+async def revoke_cmd(client, message):
+    if len(message.command) < 3:
+        return await message.reply("❌ <b>Usage:</b> <code>/revoke user_id feature_name</code>")
+        
+    try:
+        user_id = int(message.command[1])
+        feature = message.command[2].lower()
+        
+        if revoke_feature(user_id, feature):
+            await message.reply(f"🚫 <b>Revoked '{feature}' from User {user_id}.</b>")
+        else:
+            await message.reply(f"⚠️ <b>User {user_id} does not have '{feature}'.</b>")
+            
+    except ValueError:
+        await message.reply("❌ <b>Invalid User ID.</b>")
+    except Exception as e:
+        await message.reply(f"❌ <b>Error:</b> {e}")
+
 # ========== UTILITY COMMANDS ==========
 @app.on_message(filters.command(["addsite", "addurl"]) & authorized_filter)
 async def add_site_cmd(client, message):
@@ -1482,6 +1520,7 @@ async def profile_cmd(client, message):
 📈 <b>Plan:</b> {user_data.get('plan', 'FREE')}
 {'<b>VIP:</b> ✅ Yes' if user_data.get('is_vip') else ''}
 {f"<b>Expiry:</b> {user_data.get('expiry')}" if user_data.get('expiry') else ''}
+{f"<b>Features:</b> {', '.join(user_data.get('features', []))}" if user_data.get('features') else ''}
 
 📅 <b>Joined:</b> {user_data.get('joined_at', 'N/A')}
     """
