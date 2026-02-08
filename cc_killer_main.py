@@ -1244,24 +1244,34 @@ async def add_site_cmd(client, message):
     if not matches:
         return await message.reply("❌ <b>No valid URLs found.</b>")
 
-    from config import save_site
+    from config import check_site_valid
+    
+    status_msg = await message.reply(f"⏳ <b>Verifying {len(matches)} sites...</b>")
+    
     added = 0
+    valid_sites = []
+    
     for url in matches:
         if not url.startswith("http"):
             url = "https://" + url
-        if save_site(url):
+            
+        if await check_site_valid(url):
+            await db.add_site(url)
+            valid_sites.append(url)
             added += 1
             
-    await message.reply(f"✅ <b> {added} Sites Added!</b>")
+    if added > 0:
+        await status_msg.edit(f"✅ <b>Verified & Added {added} Sites!</b>\n\nDiscarded {len(matches) - added} invalid/dead sites.")
+    else:
+        await status_msg.edit("❌ <b>No valid live sites found.</b>")
 
 @app.on_message(filters.command("listsites") & authorized_filter)
 async def list_sites_cmd(client, message):
-    from config import load_sites
-    sites = load_sites()
+    sites = await db.get_sites()
     if not sites:
         return await message.reply("📭 <b>No sites added yet.</b>")
     
-    msg = "📂 <b>Added Sites:</b>\n"
+    msg = f"📂 <b>Added Sites:</b> ({len(sites)})\n"
     for site in sites:
         msg += f"• <code>{site}</code>\n"
     await message.reply(msg)
@@ -1275,53 +1285,63 @@ async def set_proxy_cmd(client, message):
         return await message.reply("❌ <b>Usage:</b> <code>/setproxy http://user:pass@ip:port</code> or upload .txt")
     
     lines = text.replace(",", "\n").splitlines()
-    valid_proxies = []
+    candidates = []
     
     for line in lines:
         line = line.strip()
         if not line: continue
         
         if line.startswith("http"):
-            valid_proxies.append(line)
+            candidates.append(line)
             continue
             
         parts = line.split(":")
         if len(parts) == 4:
             if "." in parts[0]: 
                 host, port, user, pwd = parts
-                valid_proxies.append(f"http://{user}:{pwd}@{host}:{port}")
+                candidates.append(f"http://{user}:{pwd}@{host}:{port}")
             else:
                 user, pwd, host, port = parts
-                valid_proxies.append(f"http://{user}:{pwd}@{host}:{port}")
+                candidates.append(f"http://{user}:{pwd}@{host}:{port}")
         elif len(parts) == 2:
-             valid_proxies.append(f"http://{line}")
+             candidates.append(f"http://{line}")
              
-    if not valid_proxies:
-        return await message.reply("❌ <b>No valid proxies found.</b> Use <code>host:port:user:pass</code> or <code>http://...</code>")
+    if not candidates:
+        return await message.reply("❌ <b>No valid proxy formats found.</b>")
     
-    from config import save_proxies
-    if save_proxies(valid_proxies):
-        await message.reply(f"✅ <b>{len(valid_proxies)} Proxies Loaded!</b>\n♻️ Rotating automatically.")
+    status_msg = await message.reply(f"⏳ <b>Verifying {len(candidates)} proxies...</b>")
+    
+    from config import check_proxy_live, refresh_proxy_cache
+    added = 0
+    
+    for proxy in candidates:
+        is_live, latency = await check_proxy_live(proxy)
+        if is_live:
+            await db.add_proxy(proxy)
+            added += 1
+            
+    if added > 0:
+        await refresh_proxy_cache()
+        await status_msg.edit(f"✅ <b>Parsed {len(candidates)} -> Added {added} Live Proxies!</b>\n♻️ Cache refreshed.")
     else:
-        await message.reply("❌ <b>Error saving proxies.</b>")
+        await status_msg.edit("❌ <b>All proxies were DEAD or invalid.</b>")
 
 @app.on_message(filters.command(["viewproxy", "myproxy", "listproxy"]) & authorized_filter)
 async def view_proxy_cmd(client, message):
-    from config import PROXY_LIST, load_proxies
-    load_proxies()
+    proxies = await db.get_proxies()
     
-    if not PROXY_LIST:
-        return await message.reply("⚠️ <b>No Proxies Loaded.</b> (Using Direct Connection)")
+    if not proxies:
+        return await message.reply("⚠️ <b>No Live Proxies in DB.</b>\nUsing Direct Connection/Env Proxy.")
     
-    msg = f"🔒 <b>Loaded Proxies:</b> ({len(PROXY_LIST)} total)\n"
+    msg = f"🔒 <b>Live Proxies:</b> ({len(proxies)} total)\n"
     msg += "━━━━━━━━━━━━━━━━━━━\n"
     
-    for i, proxy in enumerate(PROXY_LIST[:10], 1):
+    for i, proxy in enumerate(proxies[:15], 1):
         masked = proxy[:30] + "..." if len(proxy) > 30 else proxy
         msg += f"{i}. <code>{masked}</code>\n"
     
-    if len(PROXY_LIST) > 10:
-        msg += f"<i>...and {len(PROXY_LIST)-10} more</i>\n"
+    if len(proxies) > 15:
+        msg += f"<i>...and {len(proxies)-15} more</i>\n"
     
     msg += "\n♻️ <i>Rotating automatically</i>"
     await message.reply(msg)

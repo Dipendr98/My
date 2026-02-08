@@ -105,6 +105,26 @@ async def init_mysql():
                         FOREIGN KEY (referred_id) REFERENCES users(user_id)
                     )
                 ''')
+
+                # Create proxies table
+                await cur.execute('''
+                    CREATE TABLE IF NOT EXISTS proxies (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        proxy TEXT NOT NULL,
+                        status VARCHAR(50) DEFAULT 'live',
+                        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+
+                # Create sites table
+                await cur.execute('''
+                    CREATE TABLE IF NOT EXISTS sites (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        url TEXT NOT NULL,
+                        status VARCHAR(50) DEFAULT 'active',
+                        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
             
         print("✅ MySQL initialized successfully!")
         return True
@@ -276,6 +296,45 @@ async def mysql_get_referral_stats(user_id: int) -> dict:
                 }
             return None
 
+            return None
+
+async def mysql_add_proxy(proxy: str):
+    """Add a proxy to MySQL."""
+    async with db_pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute('INSERT INTO proxies (proxy) VALUES (%s)', (proxy,))
+    return True
+
+async def mysql_get_proxies():
+    """Get all live proxies from MySQL."""
+    async with db_pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("SELECT proxy FROM proxies WHERE status = 'live'")
+            rows = await cur.fetchall()
+            return [row['proxy'] for row in rows]
+
+async def mysql_clear_proxies():
+    """Clear all proxies."""
+    async with db_pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute('TRUNCATE TABLE proxies')
+    return True
+
+async def mysql_add_site(url: str):
+    """Add a site to MySQL."""
+    async with db_pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute('INSERT INTO sites (url) VALUES (%s)', (url,))
+    return True
+
+async def mysql_get_sites():
+    """Get all active sites from MySQL."""
+    async with db_pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("SELECT url FROM sites WHERE status = 'active'")
+            rows = await cur.fetchall()
+            return [row['url'] for row in rows]
+
 # ============ SQLite Fallback Functions ============
 SQLITE_DB = os.path.join(os.path.dirname(__file__), "bot_database.db")
 
@@ -310,6 +369,24 @@ def init_sqlite():
             referred_id INTEGER NOT NULL UNIQUE,
             credited INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS proxies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proxy TEXT NOT NULL,
+            status TEXT DEFAULT 'live',
+            added_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL,
+            status TEXT DEFAULT 'active',
+            added_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
@@ -439,6 +516,46 @@ def sqlite_get_user_count() -> int:
     conn.close()
     return count
 
+def sqlite_add_proxy(proxy: str):
+    conn = sqlite3.connect(SQLITE_DB)
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO proxies (proxy) VALUES (?)', (proxy,))
+    conn.commit()
+    conn.close()
+    return True
+
+def sqlite_get_proxies():
+    conn = sqlite3.connect(SQLITE_DB)
+    cursor = conn.cursor()
+    cursor.execute("SELECT proxy FROM proxies WHERE status = 'live'")
+    rows = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
+
+def sqlite_clear_proxies():
+    conn = sqlite3.connect(SQLITE_DB)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM proxies') # SQLite doesn't support TRUNCATE
+    conn.commit()
+    conn.close()
+    return True
+
+def sqlite_add_site(url: str):
+    conn = sqlite3.connect(SQLITE_DB)
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO sites (url) VALUES (?)', (url,))
+    conn.commit()
+    conn.close()
+    return True
+
+def sqlite_get_sites():
+    conn = sqlite3.connect(SQLITE_DB)
+    cursor = conn.cursor()
+    cursor.execute("SELECT url FROM sites WHERE status = 'active'")
+    rows = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
+
 # ============ Unified Interface ============
 class Database:
     """Unified database interface - uses MySQL if available, SQLite otherwise."""
@@ -504,6 +621,31 @@ class Database:
                 "referred_by": user.get('referred_by')
             }
         return None
+
+    async def add_proxy(self, proxy: str):
+        if self.use_mysql:
+            return await mysql_add_proxy(proxy)
+        return sqlite_add_proxy(proxy)
+
+    async def get_proxies(self):
+        if self.use_mysql:
+            return await mysql_get_proxies()
+        return sqlite_get_proxies()
+
+    async def clear_proxies(self):
+        if self.use_mysql:
+            return await mysql_clear_proxies()
+        return sqlite_clear_proxies()
+
+    async def add_site(self, url: str):
+        if self.use_mysql:
+            return await mysql_add_site(url)
+        return sqlite_add_site(url)
+
+    async def get_sites(self):
+        if self.use_mysql:
+            return await mysql_get_sites()
+        return sqlite_get_sites()
 
 # Global database instance
 db = Database()

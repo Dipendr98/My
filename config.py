@@ -1,6 +1,11 @@
 import os
 import json
+import asyncio
+import time
+import aiohttp
+import random
 from dotenv import load_dotenv
+from database import db
 
 load_dotenv()
 
@@ -246,53 +251,60 @@ def has_feature_access(user_id, feature):
         
     return False
 
-# PROXY CONFIG
-PROXY_FILE = os.path.join(os.path.dirname(__file__), "proxy.json")
-PROXY_LIST = []
+# PROXY & SITE MANAGEMENT (DB-Backed)
 
-def load_proxies():
-    global PROXY_LIST
-    if os.path.exists(PROXY_FILE):
-        try:
-            with open(PROXY_FILE, "r") as f:
-                data = json.load(f)
-                proxies = data.get("proxies", [])
-                # Backwards compatibility check
-                if not proxies and data.get("proxy"):
-                    proxies = [data.get("proxy")]
-                PROXY_LIST = proxies
-                return proxies
-        except: pass
-    
-    # Fallback env
-    env_proxy = os.getenv("PROXY_URL", "")
-    if env_proxy:
-        PROXY_LIST = [env_proxy]
-    return PROXY_LIST
+PROXY_CACHE = []
+LAST_PROXY_REFRESH = 0
+PROXY_REFRESH_INTERVAL = 300 # 5 minutes
 
-def save_proxies(proxies):
-    global PROXY_LIST
-    # Ensure input is a list
-    if isinstance(proxies, str):
-        proxies = [proxies]
-        
-    with open(PROXY_FILE, "w") as f:
-        json.dump({"proxies": proxies}, f)
-    PROXY_LIST = proxies
-    return True
+async def refresh_proxy_cache():
+    """Refresh proxy cache from DB."""
+    global PROXY_CACHE, LAST_PROXY_REFRESH
+    if time.time() - LAST_PROXY_REFRESH > PROXY_REFRESH_INTERVAL or not PROXY_CACHE:
+        if not db.initialized:
+            await db.init()
+        PROXY_CACHE = await db.get_proxies()
+        LAST_PROXY_REFRESH = time.time()
+        # print(f"♻️ Proxy cache refreshed: {len(PROXY_CACHE)} proxies")
 
 def get_proxy():
-    """Returns a RANDOM proxy from the list."""
-    if not PROXY_LIST:
-        load_proxies()
-    
-    if PROXY_LIST:
-        import random
-        return random.choice(PROXY_LIST)
-    return ""
+    """Returns a RANDOM proxy from the cache (sync wrapper)."""
+    if not PROXY_CACHE:
+        # Check env var as fallback
+        env_proxy = os.getenv("PROXY_URL", "")
+        if env_proxy: return env_proxy
+        return ""
+    return random.choice(PROXY_CACHE)
 
-# Init
-load_proxies()
+async def check_proxy_live(proxy: str) -> tuple[bool, int]:
+    """
+    Verify if a proxy is live.
+    Returns: (is_live, latency_ms)
+    """
+    test_url = "http://www.google.com"
+    start = time.time()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(test_url, proxy=proxy, timeout=5) as resp:
+                if resp.status == 200:
+                    latency = int((time.time() - start) * 1000)
+                    return True, latency
+    except:
+        pass
+    return False, 0
+
+async def check_site_valid(url: str) -> bool:
+    """Verify if a site URL is reachable."""
+    if not url.startswith("http"):
+        url = "https://" + url
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=10) as resp:
+                if resp.status == 200:
+                    return True
+    except:
+        pass
+    return False
 
 # AUTOHITTER URLs MANAGEMENT
 HITTER_URLS_FILE = os.path.join(os.path.dirname(__file__), "hitter_urls.json")
