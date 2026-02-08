@@ -140,10 +140,10 @@ async def mysql_create_user(user_id: int, username: str = None, first_name: str 
             # Upsert User
             await cur.execute('''
                 INSERT INTO users (user_id, username, first_name, credits, is_registered, features)
-                VALUES (%s, %s, %s, 10, TRUE, '[]')
+                VALUES (%s, %s, %s, 10, TRUE, '[]') AS new_values
                 ON DUPLICATE KEY UPDATE 
-                    username = VALUES(username),
-                    first_name = VALUES(first_name),
+                    username = new_values.username,
+                    first_name = new_values.first_name,
                     is_registered = TRUE,
                     last_active = CURRENT_TIMESTAMP
             ''', (user_id, username, first_name))
