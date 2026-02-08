@@ -12,7 +12,11 @@ from bin_detector import get_bin_info
 from generator import generate_cards
 from database import db
 from gates import check_braintree_rotometals
-from steam_gate import check_steam_account
+try:
+    from steam_gate import check_steam_account
+except ImportError:
+    async def check_steam_account(user, password):
+        return {"status": "error", "response": "Steam module missing dependencies (Crypto/bs4)"}
 
 # Session persistence - prevents FloodWait on every deploy
 SESSION_STRING = os.getenv("SESSION_STRING", "")
