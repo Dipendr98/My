@@ -1610,6 +1610,13 @@ if __name__ == "__main__":
                     await asyncio.sleep(wait_time)
                     print("♻️ RETRYING CONNECTION...")
                 else:
+                    if "AuthKeyDuplicated" in error_str:
+                        print("❌ CRITICAL: Session Duplicated! You are using the same string in multiple bots.")
+                        print("👉 FIX: Delete 'temp_session.session' file or generate a NEW session string.")
+                        if os.path.exists("temp_session.session"):
+                            os.remove("temp_session.session")
+                            print("✅ Automatically deleted 'temp_session.session'. Restarting...")
+                            continue
                     raise e
 
         print("🚀 CC KILLER v2.0 STARTED")
