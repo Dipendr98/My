@@ -13,6 +13,8 @@ import warnings
 
 # Suppress "VALUES function is deprecated" warning from aiomysql/MySQL
 warnings.filterwarnings("ignore", message=".*VALUES function.*")
+# Suppress "already exists" warnings from CREATE DATABASE/TABLE IF NOT EXISTS
+warnings.filterwarnings("ignore", message=".*already exists.*")
 
 # Try to import aiomysql for MySQL, fallback to sqlite3
 try:
