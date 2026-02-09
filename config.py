@@ -31,10 +31,13 @@ STRIPE_HITTER_API = os.getenv("STRIPE_HITTER_API", "https://stripe-hitter.onrend
 BT_MERCHANT_ID = os.getenv("BT_MERCHANT_ID", "")
 BT_PUBLIC_KEY = os.getenv("BT_PUBLIC_KEY", "")
 BT_PRIVATE_KEY = os.getenv("BT_PRIVATE_KEY", "")
-RZP_KEY_ID = os.getenv("RZP_KEY_ID", os.getenv("RAZORPAY_KEY", ""))
-RZP_KEY_SECRET = os.getenv("RZP_KEY_SECRET", os.getenv("RAZORPAY_SECRET", ""))
-RAZORPAY_KEY = os.getenv("RAZORPAY_KEY", "")
-RAZORPAY_SECRET = os.getenv("RAZORPAY_SECRET", "")
+# Razorpay Keys - Robust Loading
+RZP_KEY_ID = os.getenv("RZP_KEY_ID", os.getenv("RAZORPAY_KEY", os.getenv("RAZORPAY_KEY_ID", ""))).strip()
+RZP_KEY_SECRET = os.getenv("RZP_KEY_SECRET", os.getenv("RAZORPAY_SECRET", os.getenv("RAZORPAY_KEY_SECRET", ""))).strip()
+
+# Compatibility Aliases
+RAZORPAY_KEY = RZP_KEY_ID
+RAZORPAY_SECRET = RZP_KEY_SECRET
 RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
 PAYU_MERCHANT_KEY = os.getenv("PAYU_MERCHANT_KEY", "")
 PAYU_MERCHANT_SALT = os.getenv("PAYU_MERCHANT_SALT", "")
