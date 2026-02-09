@@ -9,6 +9,10 @@ import hashlib
 import random
 import string
 import json
+import warnings
+
+# Suppress "VALUES function is deprecated" warning from aiomysql/MySQL
+warnings.filterwarnings("ignore", message=".*VALUES function.*")
 
 # Try to import aiomysql for MySQL, fallback to sqlite3
 try:
