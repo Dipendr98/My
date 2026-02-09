@@ -23,7 +23,10 @@ SHOPIFY_STORE = os.getenv("SHOPIFY_STORE", "")
 SHOPIFY_ACCESS_TOKEN = os.getenv("SHOPIFY_ACCESS_TOKEN", "")
 
 # Gateway API Keys (from env vars or defaults)
-STRIPE_SK = os.getenv("STRIPE_SK", "").replace("STRIPE_SK=", "").strip()
+import re
+temp_sk = os.getenv("STRIPE_SK", "")
+# Remove STRIPE_SK= prefix (case insensitive), remove quotes, strip whitespace
+STRIPE_SK = re.sub(r'(?i)^STRIPE_SK\s*=\s*', '', temp_sk).replace('"', '').replace("'", "").strip()
 STRIPE_HITTER_API = os.getenv("STRIPE_HITTER_API", "https://stripe-hitter.onrender.com/stripe/checkout-based/url/{YOUR_CHECKOUT_URL}/pay/cc/{YOUR_CC}")
 BT_MERCHANT_ID = os.getenv("BT_MERCHANT_ID", "")
 BT_PUBLIC_KEY = os.getenv("BT_PUBLIC_KEY", "")
