@@ -17,10 +17,11 @@ SESSION_STRING = os.getenv("SESSION_STRING", "")
 
 if SESSION_STRING:
     app = Client("cc_killer_bot", session_string=SESSION_STRING, api_id=API_ID, api_hash=API_HASH)
-    print("✅ Using persistent session")
+    print("[OK] Using persistent session")
 else:
     app = Client("cc_killer_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-    print("⚠️ No SESSION_STRING set - using BOT_TOKEN (may cause FloodWait)")
+    print("[WARNING] No SESSION_STRING set - using BOT_TOKEN (may cause FloodWait)")
+
 
 # Store pending check data per user
 pending_checks = {}
@@ -1388,7 +1389,7 @@ if __name__ == "__main__":
         # Initialize database
         print("🗄️ Initializing database...")
         await db.init()
-        print("✅ DATABASE READY")
+        print("[OK] DATABASE READY")
         
         while True:
             try:
@@ -1426,13 +1427,13 @@ if __name__ == "__main__":
         ]
         try:
             await app.set_bot_commands(commands)
-            print("✅ COMMANDS CONFIGURED")
+            print("[OK] COMMANDS CONFIGURED")
         except Exception as e:
             print(f"❌ Failed to set commands: {e}")
         
         from queue_manager import init_queue
         await init_queue()
-        print("✅ QUEUE SYSTEM READY")
+        print("[OK] QUEUE SYSTEM READY")
             
         await idle()
         await app.stop()

@@ -118,4 +118,4 @@ async def mass_specific_gate_runner(cards: list, gate_func: callable, status_cal
     await asyncio.gather(*tasks)
     return results
 
-print("✅ API_KILLER REFACTORED | Proxy & Turbo enabled")
+print("[OK] API_KILLER REFACTORED | Proxy & Turbo enabled")

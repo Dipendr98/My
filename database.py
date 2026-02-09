@@ -15,7 +15,8 @@ try:
     HAS_ASYNCPG = True
 except ImportError:
     HAS_ASYNCPG = False
-    print("⚠️ asyncpg not installed, using SQLite fallback")
+    print("[WARNING] asyncpg not installed, using SQLite fallback")
+
 
 import sqlite3
 import json
@@ -78,7 +79,7 @@ async def init_postgres():
                 )
             ''')
             
-        print("✅ PostgreSQL initialized successfully!")
+        print("[OK] PostgreSQL initialized successfully!")
         return True
     except Exception as e:
         print(f"❌ PostgreSQL Error: {e}")
@@ -251,7 +252,7 @@ def init_sqlite():
     
     conn.commit()
     conn.close()
-    print("✅ SQLite initialized")
+    print("[OK] SQLite initialized")
     return True
 
 def sqlite_get_user(user_id: int) -> dict:
@@ -406,4 +407,4 @@ class Database:
 # Global database instance
 db = Database()
 
-print("✅ Database module loaded")
+print("[OK] Database module loaded")

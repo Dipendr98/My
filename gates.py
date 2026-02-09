@@ -742,4 +742,4 @@ async def check_stripe_inbuilt(card: str, month: str, year: str, cvv: str, pk: s
 async def check_stripe_wc(c, m, y, cv, p=None): 
     return {"status": "declined", "response": "Fallback", "gate": "WC"}
 
-print("✅ GATES.py UPDATED | Proxy & Charge logic added")
+print("[OK] GATES.py UPDATED | Proxy & Charge logic added")

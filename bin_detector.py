@@ -36,4 +36,4 @@ def get_gate_priority(bin6: str) -> list:
         return ["Stripe", "Braintree", "Amazon"]
     return ["Stripe", "Braintree"]
 
-print("✅ PREMIUM BIN DETECTOR LOADED")
+print("[OK] PREMIUM BIN DETECTOR LOADED")
