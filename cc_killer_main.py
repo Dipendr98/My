@@ -756,7 +756,7 @@ def get_gate_function(gate_key: str, check_type: str):
         check_stripe_sk, check_stripe_nonsk, check_stripe_autowoo,
         check_stripe_inbuilt, check_stripe_autohitter_url,
         check_fastspring_auth, check_fastspring_charge,
-        check_killer_gate
+        check_killer_gate, check_paypal_render
     )
     
     if check_type == "auth":
@@ -773,7 +773,7 @@ def get_gate_function(gate_key: str, check_type: str):
     else:  # charged
         gate_map = {
             "shopify": check_shopify,
-            "paypal": check_paypal_avs,
+            "paypal": check_paypal_render,
             "razorpay": check_razorpay_charge,
             "stripe": check_stripe_sk,
             "braintree": check_braintree_charge,
