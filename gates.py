@@ -87,6 +87,7 @@ async def check_stripe(card: str, month: str, year: str, cvv: str, proxy=None) -
 
 async def check_shopify(card: str, month: str, year: str, cvv: str, proxy=None) -> dict:
     """Shopify Checkout Gate"""
+    return {"status": "dead", "response": "Shopify Disabled (No Store Configured)", "gate": "Shopify"}
     if not SHOPIFY_STORE:
         return {"status": "error", "response": "Shopify Store missing"}
         
