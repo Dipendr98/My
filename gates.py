@@ -155,12 +155,14 @@ async def check_razorpay(card: str, month: str, year: str, cvv: str, proxy=None)
                 error_msg = str(e)
                 if "insufficient" in error_msg.lower():
                     return {"status": "live", "response": "Insufficient Funds ✅", "gate": "Razorpay Auth"}
+                if "requested url was not found" in error_msg.lower():
+                    return {"status": "error", "response": "Merchant S2S Not Enable ❌", "gate": "Razorpay Auth"}
                 return {"status": "dead", "response": error_msg[:100], "gate": "Razorpay Auth"}
             except Exception as e:
-                 error_msg = str(e)
-                 if "card_generic_error" in error_msg.lower() or "r_error" in error_msg.lower():
+                error_msg = str(e)
+                if "card_generic_error" in error_msg.lower() or "r_error" in error_msg.lower():
                      return {"status": "dead", "response": "Declined (Generic Error)", "gate": "Razorpay Auth"}
-                 raise e
+                return {"status": "error", "response": error_msg[:100], "gate": "Razorpay Auth"}
         
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, call_razorpay)
@@ -226,6 +228,8 @@ async def check_razorpay_charge(card: str, month: str, year: str, cvv: str, prox
                     return {"status": "live", "response": "Insufficient Funds ✅", "gate": "Razorpay Charge"}
                 if "invalid" in error_msg.lower():
                     return {"status": "dead", "response": "Invalid Card", "gate": "Razorpay Charge"}
+                if "requested url was not found" in error_msg.lower():
+                    return {"status": "error", "response": "Merchant S2S Not Enable ❌", "gate": "Razorpay Charge"}
                 return {"status": "dead", "response": error_msg[:100], "gate": "Razorpay Charge"}
         
         loop = asyncio.get_event_loop()

@@ -51,9 +51,10 @@ async def check_shopify_api(cc: str, month: str, year: str, cvv: str, proxy: str
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                 if resp.status != 200:
+                    status_msg = "Shopify API Down ❌" if resp.status == 404 else f"API Error: {resp.status}"
                     return {
                         "status": "error",
-                        "response": f"API Error: HTTP {resp.status}",
+                        "response": status_msg,
                         "gate": "Shopify API"
                     }
                 
