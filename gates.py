@@ -145,7 +145,7 @@ async def check_razorpay(card: str, month: str, year: str, cvv: str, proxy=None)
             
             try:
                 # Try to create payment
-                payment = client.payment.create(payment_data)
+                payment = client.payment.createPaymentJson(payment_data)
                 if payment.get("status") == "authorized":
                     return {"status": "approved", "response": "Card Authorized ✅", "gate": "Razorpay Auth"}
                 if payment.get("status") == "captured":
@@ -204,7 +204,7 @@ async def check_razorpay_charge(card: str, month: str, year: str, cvv: str, prox
             }
             
             try:
-                payment = client.payment.create(payment_data)
+                payment = client.payment.createPaymentJson(payment_data)
                 
                 # If authorized, try to capture (this is the actual charge)
                 if payment.get("status") == "authorized":
