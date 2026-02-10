@@ -156,15 +156,16 @@ def login_to_steam(username, password, client):
     }
     return True, steamid, capture
 
-user_input = input("Enter user:pass => ")
-username, password = user_input.split(":", 1)
+if __name__ == "__main__":
+    user_input = input("Enter user:pass => ")
+    username, password = user_input.split(":", 1)
 
-client = requests.Session()
-ok, steamid, data = login_to_steam(username.strip(), password.strip(), client)
+    client = requests.Session()
+    ok, steamid, data = login_to_steam(username.strip(), password.strip(), client)
 
-if ok:
-    print("[✅] Login Success")
-    for k, v in data.items():
-        print(f"{k}: {v}")
-else:
-    print("Login failed")
+    if ok:
+        print("[✅] Login Success")
+        for k, v in data.items():
+            print(f"{k}: {v}")
+    else:
+        print("Login failed")

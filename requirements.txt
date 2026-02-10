@@ -8,3 +8,5 @@ razorpay
 beautifulsoup4
 aiomysql
 cryptography
+requests
+pycryptodome

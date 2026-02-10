@@ -5,12 +5,14 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import API_ID, API_HASH, BOT_TOKEN, OWNER_ID, get_user_data, update_user_credits, set_user_vip, set_user_plan, UPI_ID, PAYMENT_QR_URL, WELCOME_PHOTO_URL, get_asset_path, DEVELOPER_NAME, PROJECT_NAME, PROJECT_TAG, add_hitter_url, remove_hitter_url, get_hitter_urls, load_hitter_urls
 from security import authorized_filter, check_flood
 import time
+import requests
 from tokenizer import extract_cards
 from api_killer import run_all_gates, mass_killer, mass_specific_gate_runner
 from stlear_killer import steal_cc_killer
 from bin_detector import get_bin_info
 from generator import generate_cards
 from database import db
+from steamapi import login_to_steam
 
 # Session persistence - prevents FloodWait on every deploy
 SESSION_STRING = os.getenv("SESSION_STRING", "")
@@ -91,6 +93,54 @@ async def get_text_from_message(client, message):
             return parts[1], None
     
     return "", None
+
+@app.on_message(filters.command("steam") & authorized_filter)
+async def check_steam_acc(client, message):
+    text, error = await get_text_from_message(client, message)
+    if error:
+        return await message.reply(error)
+        
+    if not text:
+        return await message.reply("❌ Usage: `/steam user:pass`")
+        
+    parts = text.split(":", 1)
+    if len(parts) != 2:
+        return await message.reply("❌ Invalid format! Use `user:pass`")
+        
+    username, password = parts
+    status_msg = await message.reply("🔍 <b>Checking Steam Account...</b>")
+    
+    sess = requests.Session()
+    success, steamid, data = login_to_steam(username.strip(), password.strip(), sess)
+    
+    if success:
+        vac_bans = ', '.join(data.get("VAC", [])) or "None"
+        game_bans = ', '.join(data.get("GameBans", [])) or "None"
+        
+        reply_text = f"""
+🎮 <b>STEAM ACCOUNT CHECK</b>
+━━━━━━━━━━━━━━━━━━━━━━━
+👤 <b>User:</b> <code>{username}</code>
+🆔 <b>SteamID:</b> <code>{steamid}</code>
+
+💰 <b>Balance:</b> {data.get("Balance", "N/A")}
+🌍 <b>Country:</b> {data.get("Country", "N/A")}
+🟢 <b>Status:</b> {data.get("Online", "N/A")}
+
+🚫 <b>Bans:</b>
+• Community: {data.get("CommunityBan", "None")}
+• VAC: {vac_bans}
+• Game Bans: {game_bans}
+
+🎮 <b>Games:</b> {data.get("TotalGames", 0)}
+🛡️ <b>Guard:</b> {data.get("SteamGuard", "Unknown")}
+⚠️ <b>Limited:</b> {data.get("Limited", "Unknown")}
+
+<b>#CheckedBy:</b> {message.from_user.first_name}
+"""
+        await status_msg.edit(reply_text)
+    else:
+        await status_msg.edit("❌ <b>Login Failed!</b> check user:pass or 2FA might be enabled.")
 
 @app.on_message(filters.command(["start", "help"]))
 async def start_cmd(client, message):
@@ -272,6 +322,7 @@ async def handle_callbacks(client, callback_query):
 
 <b>🔵 TOOLS & MANAGE</b>
  ├ <code>/gen</code> » Card Generator
+ ├ <code>/steam</code> » Steam Account Check
  ├ <code>/setproxy</code> » Set Proxy
  ├ <code>/addsite</code>  » Add Merchant
  └ <code>/plans</code>    » Subscription
@@ -302,6 +353,11 @@ async def handle_callbacks(client, callback_query):
 
 <b>4️⃣ PROXY SYSTEM</b>
 • <b>Shopify requires Proxy:</b> Use <code>/setproxy http://user:pass@ip:port</code>
+
+
+<b>5️⃣ STEAM ACCOUNT CHECK</b>
+• Check Steam account status, bans, and games.
+• Usage: <code>/steam username:password</code>
 
 <i>"Quality over Quantity - Always check your BIN first!"</i>
         """
