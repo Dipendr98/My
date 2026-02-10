@@ -155,7 +155,7 @@ async def check_razorpay(card: str, month: str, year: str, cvv: str, proxy=None)
                 error_msg = str(e)
                 if "insufficient" in error_msg.lower():
                     return {"status": "live", "response": "Insufficient Funds ✅", "gate": "Razorpay Auth"}
-                if "requested url was not found" in error_msg.lower():
+                if "not found" in error_msg.lower() or "404" in error_msg:
                     return {"status": "error", "response": "Merchant S2S Not Enable ❌", "gate": "Razorpay Auth"}
                 return {"status": "dead", "response": error_msg[:100], "gate": "Razorpay Auth"}
             except Exception as e:
@@ -228,7 +228,7 @@ async def check_razorpay_charge(card: str, month: str, year: str, cvv: str, prox
                     return {"status": "live", "response": "Insufficient Funds ✅", "gate": "Razorpay Charge"}
                 if "invalid" in error_msg.lower():
                     return {"status": "dead", "response": "Invalid Card", "gate": "Razorpay Charge"}
-                if "requested url was not found" in error_msg.lower():
+                if "not found" in error_msg.lower() or "404" in error_msg:
                     return {"status": "error", "response": "Merchant S2S Not Enable ❌", "gate": "Razorpay Charge"}
                 return {"status": "dead", "response": error_msg[:100], "gate": "Razorpay Charge"}
         
