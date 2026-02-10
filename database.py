@@ -71,39 +71,43 @@ async def init_mysql():
             maxsize=10
         )
         
+        import warnings
         async with db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                # Create users table
-                await cur.execute('''
-                    CREATE TABLE IF NOT EXISTS users (
-                        user_id BIGINT PRIMARY KEY,
-                        username TEXT,
-                        first_name TEXT,
-                        credits INTEGER DEFAULT 10,
-                        plan VARCHAR(50) DEFAULT 'FREE',
-                        is_vip BOOLEAN DEFAULT FALSE,
-                        is_registered BOOLEAN DEFAULT FALSE,
-                        referral_code VARCHAR(50) UNIQUE,
-                        referred_by BIGINT,
-                        referral_count INTEGER DEFAULT 0,
-                        expiry DATETIME,
-                        joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        last_active DATETIME DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                
-                # Create referrals tracking table
-                await cur.execute('''
-                    CREATE TABLE IF NOT EXISTS referrals (
-                        id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                        referrer_id BIGINT NOT NULL,
-                        referred_id BIGINT NOT NULL UNIQUE,
-                        credited BOOLEAN DEFAULT FALSE,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (referrer_id) REFERENCES users(user_id),
-                        FOREIGN KEY (referred_id) REFERENCES users(user_id)
-                    )
-                ''')
+                # Suppress "Table already exists" warnings from CREATE TABLE IF NOT EXISTS
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message=".*already exists.*")
+                    # Create users table
+                    await cur.execute('''
+                        CREATE TABLE IF NOT EXISTS users (
+                            user_id BIGINT PRIMARY KEY,
+                            username TEXT,
+                            first_name TEXT,
+                            credits INTEGER DEFAULT 10,
+                            plan VARCHAR(50) DEFAULT 'FREE',
+                            is_vip BOOLEAN DEFAULT FALSE,
+                            is_registered BOOLEAN DEFAULT FALSE,
+                            referral_code VARCHAR(50) UNIQUE,
+                            referred_by BIGINT,
+                            referral_count INTEGER DEFAULT 0,
+                            expiry DATETIME,
+                            joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            last_active DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+                    
+                    # Create referrals tracking table
+                    await cur.execute('''
+                        CREATE TABLE IF NOT EXISTS referrals (
+                            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                            referrer_id BIGINT NOT NULL,
+                            referred_id BIGINT NOT NULL UNIQUE,
+                            credited BOOLEAN DEFAULT FALSE,
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (referrer_id) REFERENCES users(user_id),
+                            FOREIGN KEY (referred_id) REFERENCES users(user_id)
+                        )
+                    ''')
             
         print("[OK] MySQL initialized successfully!")
         return True
