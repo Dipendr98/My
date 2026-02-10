@@ -8,7 +8,7 @@ from config import get_proxy
 
 def get_gates() -> List[Tuple[str, callable]]:
     from gates import (
-        check_stripe, check_braintree, check_razorpay, 
+        check_stripe, check_braintree_auth, check_razorpay, 
         check_shopify, check_payu, check_amazon, 
         check_autohitter, check_nmi, check_payflow,
         check_shopify_auth, check_vbv, check_paypal, check_autowoo,
@@ -16,7 +16,7 @@ def get_gates() -> List[Tuple[str, callable]]:
     )
     return [
         ("Stripe Auth v5.0", check_stripe),
-        ("Braintree v6.0", check_braintree),
+        ("Braintree v6.0", check_braintree_auth),
         ("Razorpay v2.0", check_razorpay),
         ("Shopify v4.0", check_shopify),
         # ("PayU v1.0", check_payu),

@@ -224,7 +224,7 @@ async def check_razorpay_charge(card: str, month: str, year: str, cvv: str, prox
     except Exception as e:
         return {"status": "error", "response": str(e)[:100], "gate": "Razorpay Charge"}
 
-async def check_braintree(card: str, month: str, year: str, cvv: str, proxy=None) -> dict:
+async def check_braintree_auth(card: str, month: str, year: str, cvv: str, proxy=None) -> dict:
     """Braintree Auth Gate (Cyborx Port)"""
     dead_responses = {
         "Closed Card": "Closed Card", "Do Not Honor": "Do Not Honor",
