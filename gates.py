@@ -155,11 +155,19 @@ async def check_razorpay(card: str, month: str, year: str, cvv: str, proxy=None)
                 if "insufficient" in error_msg.lower():
                     return {"status": "live", "response": "Insufficient Funds ✅", "gate": "Razorpay Auth"}
                 return {"status": "dead", "response": error_msg[:100], "gate": "Razorpay Auth"}
+            except Exception as e:
+                 error_msg = str(e)
+                 if "card_generic_error" in error_msg.lower() or "r_error" in error_msg.lower():
+                     return {"status": "dead", "response": "Declined (Generic Error)", "gate": "Razorpay Auth"}
+                 raise e
         
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, call_razorpay)
     except Exception as e:
-        return {"status": "error", "response": str(e)[:100], "gate": "Razorpay Auth"}
+        error_msg = str(e)
+        if "card_generic_error" in error_msg.lower() or "r_error" in error_msg.lower():
+             return {"status": "dead", "response": "Declined (Generic Error)", "gate": "Razorpay Auth"}
+        return {"status": "error", "response": error_msg[:100], "gate": "Razorpay Auth"}
 
 async def check_razorpay_charge(card: str, month: str, year: str, cvv: str, proxy=None) -> dict:
     """Razorpay Charge Gate - Attempts actual charge (₹5 ~$0.06)"""
