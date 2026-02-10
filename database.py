@@ -406,6 +406,39 @@ class Database:
         
         self.initialized = True
         return True
+
+    async def _query(self, query: str, *args):
+        """Raw query execution helper (Compatibility)."""
+        try:
+            if self.use_mysql:
+                async with db_pool.acquire() as conn:
+                    async with conn.cursor(aiomysql.DictCursor) as cur:
+                        # Handle args if nested tuple
+                        q_args = args[0] if len(args) == 1 and isinstance(args[0], tuple) else args
+                        await cur.execute(query, q_args)
+                        if query.strip().upper().startswith("SELECT"):
+                             rows = await cur.fetchall()
+                             return [dict(row) for row in rows]
+                        return True
+            else:
+                 # SQLite fallback
+                 conn = sqlite3.connect(SQLITE_DB)
+                 # Map %s to ?
+                 q_sqlite = query.replace("%s", "?")
+                 conn.row_factory = sqlite3.Row
+                 cursor = conn.cursor()
+                 q_args = args[0] if len(args) == 1 and isinstance(args[0], tuple) else args
+                 cursor.execute(q_sqlite, q_args)
+                 if query.strip().upper().startswith("SELECT"):
+                     rows = cursor.fetchall()
+                     conn.close()
+                     return [dict(row) for row in rows]
+                 conn.commit()
+                 conn.close()
+                 return True
+        except Exception as e:
+            print(f"[_query] Error: {e}")
+            return None
     
     async def get_user(self, user_id: int) -> dict:
         """Get user by ID."""
