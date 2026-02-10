@@ -11,7 +11,7 @@ def get_gates() -> List[Tuple[str, callable]]:
         check_stripe, check_braintree_auth, check_razorpay, 
         check_shopify, check_payu, check_amazon, 
         check_autohitter, check_nmi, check_payflow,
-        check_shopify_auth, check_vbv, check_paypal, check_autowoo,
+        check_shopify_auth, check_vbv, check_paypal, check_stripe_autowoo,
         check_paypal_avs
     )
     return [
@@ -28,7 +28,7 @@ def get_gates() -> List[Tuple[str, callable]]:
         ("VBV Pro v1.0", check_vbv),
         ("PayPal 1$ CVV", check_paypal),
         ("PayPal Key AVS", check_paypal_avs),
-        ("WooStripe v1.0", check_autowoo)
+        ("WooStripe v1.0", check_stripe_autowoo)
     ]
 
 executor = ThreadPoolExecutor(max_workers=100)
