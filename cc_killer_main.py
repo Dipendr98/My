@@ -759,6 +759,7 @@ def get_gate_function(gate_key: str, check_type: str):
         check_fastspring_auth, check_fastspring_charge,
         check_killer_gate, check_paypal_render
     )
+    from stripe_special_gates import check_stripe_heartcry, check_stripe_vercel
     
     if check_type == "auth":
         gate_map = {
@@ -776,7 +777,9 @@ def get_gate_function(gate_key: str, check_type: str):
             "shopify": check_shopify,
             "paypal": check_paypal_render,
             "razorpay": check_razorpay_charge,
-            "stripe": check_stripe_sk,
+            "stripe": check_stripe_heartcry, # Switched to HeartCry per request
+            "stripe_sk": check_stripe_sk,    # Kept old SK checker with new key
+            "vercel": check_stripe_vercel,   # Added Vercel as separate gate
             "braintree": check_braintree_charge,
             "fastspring": check_fastspring_charge,
         }
@@ -998,6 +1001,52 @@ async def b3_check_cmd(client, message):
 <b>Response >_</b> {response}
 - ━━━━━━━━━━━━━━━━━━━━━━ -
 <b>Gate >_</b> BRAINTREE CHARGE ($55)
+<b>Time:</b> {taken}s
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>#Developer >_</b> {DEVELOPER_NAME} ☀️
+"""
+    await msg.edit(final)
+
+# ========== /sc - STRIPE CHARGE SHORTCUT ==========
+@app.on_message(filters.command("sc") & authorized_filter)
+async def sc_check_cmd(client, message):
+    is_flood, remain = check_flood(message.from_user.id, wait_time=10)
+    if is_flood:
+        return await message.reply(f"⏳ Wait {remain}s.")
+
+    text = message.text
+    cards = extract_cards(text)
+    
+    if not cards:
+        return await message.reply("❌ <b>Usage:</b> <code>/sc cc|mm|yy|cvv</code>")
+        
+    user_id = message.from_user.id
+    if not update_user_credits(user_id, -1):
+        return await message.reply("❌ Insufficient credits!")
+
+    msg = await message.reply("⚡ <b>Checking via Stripe Charge (HeartCry)...</b>")
+    
+    from stripe_special_gates import check_stripe_heartcry
+    start = time.perf_counter()
+    
+    cc, mm, yy, cvv = cards[0]
+    result = await check_stripe_heartcry(cc, mm, yy, cvv)
+    
+    end = time.perf_counter()
+    taken = f"{end - start:.2f}"
+    
+    # Format Result
+    status = result.get("status", "DEAD").upper()
+    response = result.get("response", "Unknown")
+    
+    final = f"""
+<b>{PROJECT_TAG} 〉 [{PROJECT_NAME} 💀]</b>
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Card >_</b> <code>{cc}|{mm}|{yy}|{cvv}</code>
+<b>$Status:</b> {status} ✨
+<b>Response >_</b> {response}
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Gate >_</b> STRIPE CHARGE (HeartCry)
 <b>Time:</b> {taken}s
 - ━━━━━━━━━━━━━━━━━━━━━━ -
 <b>#Developer >_</b> {DEVELOPER_NAME} ☀️
