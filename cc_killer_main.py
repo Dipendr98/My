@@ -952,6 +952,58 @@ async def single_check(client, message):
         reply_markup=keyboard
     )
 
+# ========== /b3 - BRAINTREE CHARGE SHORTCUT ==========
+@app.on_message(filters.command("b3") & authorized_filter)
+async def b3_check_cmd(client, message):
+    is_flood, remain = check_flood(message.from_user.id, wait_time=10)
+    if is_flood:
+        return await message.reply(f"⏳ Wait {remain}s.")
+
+    text = message.text
+    cards = extract_cards(text)
+    
+    if not cards:
+        return await message.reply("❌ <b>Usage:</b> <code>/b3 cc|mm|yy|cvv</code>")
+        
+    user_id = message.from_user.id
+    if not update_user_credits(user_id, -1):
+        return await message.reply("❌ Insufficient credits!")
+
+    msg = await message.reply("⚡ <b>Checking via Braintree Charge ($55.76)...</b>")
+    
+    # Import from the new helper file
+    try:
+        from braintree_helper import check_braintree_bigcommerce
+        gate_func = check_braintree_bigcommerce
+    except ImportError:
+        return await msg.edit("❌ Error: Helper module not found.")
+
+    start = time.perf_counter()
+    
+    cc, mm, yy, cvv = cards[0]
+    result = await gate_func(cc, mm, yy, cvv)
+    
+    end = time.perf_counter()
+    taken = f"{end - start:.2f}"
+    
+    # Format Result
+    status = result.get("status", "DEAD").upper()
+    response = result.get("response", "Unknown")
+    
+    final = f"""
+<b>{PROJECT_TAG} 〉 [{PROJECT_NAME} 💀]</b>
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Card >_</b> <code>{cc}|{mm}|{yy}|{cvv}</code>
+<b>$Status:</b> {status} ✨
+<b>Response >_</b> {response}
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>Gate >_</b> BRAINTREE CHARGE ($55)
+<b>Time:</b> {taken}s
+- ━━━━━━━━━━━━━━━━━━━━━━ -
+<b>#Developer >_</b> {DEVELOPER_NAME} ☀️
+"""
+    await msg.edit(final)
+
 # ========== /mchk - MASS CHECKER ==========
 @app.on_message(filters.command("mchk") & authorized_filter)
 async def mass_check_cmd(client, message):
