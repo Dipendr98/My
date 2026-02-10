@@ -487,7 +487,12 @@ async def handle_callbacks(client, callback_query):
         status_msg = await callback_query.edit_message_text(f"⚡ <b>Checking via {gate_key.upper()} ({check_type.upper()})...</b>")
         
         # Get the gate function
-        gate_func = get_gate_function(gate_key, check_type)
+        # Get the gate function
+        if gate_key == "stripe":
+            from gates import check_stripe_vercel
+            gate_func = check_stripe_vercel
+        else:
+            gate_func = get_gate_function(gate_key, check_type)
         
         start_time = time.perf_counter()
         cc, mm, yy, cvv = card

